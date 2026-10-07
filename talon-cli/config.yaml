@@ -1,5 +1,5 @@
 name: Talon CLI
-version: "0.3.0"
+version: "0.3.1"
 slug: talon_cli
 description: Manage a Talon workspace with the upstream Talon CLI.
 url: https://github.com/lukkezen/talon

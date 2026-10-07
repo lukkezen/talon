@@ -2,9 +2,8 @@
 set -eu
 
 OPTIONS="/data/options.json"
-STATE_DIR="/data/talon/state"
-CONFIG_ROOT="/config"
-APP_CONFIG_MARKER="$CONFIG_ROOT/.talon-daemon-app-config"
+LEGACY_BASE="/data/talon"
+STATE_DIR="$LEGACY_BASE/state"
 
 if [ ! -f "$OPTIONS" ]; then
   echo "[talon] Home Assistant options file not found: $OPTIONS"
@@ -15,7 +14,7 @@ INSTANCE="$(jq -r '.instance // ""' "$OPTIONS" | xargs)"
 
 case "$INSTANCE" in
   "")
-    INSTANCE_DIR="default"
+    SHARED_BASE="/share/talon"
     ;;
   *[!A-Za-z0-9._-]*|.*|*..*)
     echo "[talon] Invalid instance name: '$INSTANCE'"
@@ -23,21 +22,20 @@ case "$INSTANCE" in
     exit 1
     ;;
   *)
-    INSTANCE_DIR="$INSTANCE"
+    SHARED_BASE="/share/talon-instances/$INSTANCE"
     ;;
 esac
 
-WORKSPACE="$CONFIG_ROOT/instances/$INSTANCE_DIR"
-CONFIG_FILE="$WORKSPACE/talond.yaml"
-PERSONA_DIR="$WORKSPACE/personas/assistant"
-SHARED_IPC_DIR="$WORKSPACE/data/ipc/daemon"
+CONFIG_FILE="$SHARED_BASE/talond.yaml"
+PERSONA_DIR="$SHARED_BASE/personas/assistant"
+SHARED_IPC_DIR="$SHARED_BASE/data/ipc/daemon"
 PRIVATE_IPC_DIR="$STATE_DIR/ipc/daemon"
-BOOTSTRAP_MARKER="$WORKSPACE/.bootstrapped-v0.6"
 
-: > "$APP_CONFIG_MARKER"
+mkdir -p "$STATE_DIR/ipc" "$SHARED_BASE/skills" "$SHARED_BASE/personas" "$SHARED_BASE/subagents" "$SHARED_BASE/userdata" "$SHARED_IPC_DIR"
 
-mkdir -p "$STATE_DIR/ipc" "$WORKSPACE/skills" "$WORKSPACE/personas" "$WORKSPACE/subagents" "$WORKSPACE/userdata" "$SHARED_IPC_DIR"
-
+# Upstream Talon always serves daemon file-IPC from <dataDir>/ipc/daemon.
+# Keep dataDir private, but redirect only that transient IPC directory into
+# the selected shared workspace so Talon CLI can use status/reload safely.
 if [ -L "$PRIVATE_IPC_DIR" ]; then
   rm -f "$PRIVATE_IPC_DIR"
 elif [ -e "$PRIVATE_IPC_DIR" ]; then
@@ -59,11 +57,38 @@ fi
 export OPENAI_API_KEY
 export TELEGRAM_BOT_TOKEN
 export TALON_INSTANCE="$INSTANCE"
-export TALON_WORKSPACE="$WORKSPACE"
+export TALON_WORKSPACE="$SHARED_BASE"
 export TALOND_CONFIG_PATH="$CONFIG_FILE"
 
 MODEL_JSON="$(printf '%s' "$OPENAI_MODEL" | jq -Rs .)"
 CHAT_ID_JSON="$(printf '%s' "$TELEGRAM_CHAT_ID" | jq -Rs .)"
+
+# Only the default instance migrates the pre-0.4 private layout.
+# Named instances always start with their own isolated workspace.
+if [ -z "$INSTANCE" ] && [ ! -f "$CONFIG_FILE" ] && [ -f "$LEGACY_BASE/config/talond.yaml" ]; then
+  echo "[talon] Migrating legacy Talon configuration to $SHARED_BASE"
+  cp "$LEGACY_BASE/config/talond.yaml" "$CONFIG_FILE"
+
+  for dir in personas skills subagents userdata; do
+    if [ -d "$LEGACY_BASE/$dir" ]; then
+      cp -a "$LEGACY_BASE/$dir/." "$SHARED_BASE/$dir/" 2>/dev/null || true
+    fi
+  done
+
+  sed -i \
+    -e "s#/data/talon/personas#$SHARED_BASE/personas#g" \
+    -e "s#/data/talon/skills#$SHARED_BASE/skills#g" \
+    -e "s#/data/talon/subagents#$SHARED_BASE/subagents#g" \
+    -e "s#/data/talon/userdata#$SHARED_BASE/userdata#g" \
+    -e "s#/data/talon/state/ipc/daemon#$SHARED_BASE/data/ipc/daemon#g" \
+    "$CONFIG_FILE"
+
+  sed -i \
+    -e 's#^[[:space:]]*botToken:.*#      botToken: ${TELEGRAM_BOT_TOKEN}#' \
+    -e 's#^[[:space:]]*apiKey:.*#      apiKey: ${OPENAI_API_KEY}#' \
+    "$CONFIG_FILE"
+  echo "[talon] Migration complete. Legacy /data/talon configuration was left intact."
+fi
 
 mkdir -p "$PERSONA_DIR"
 if [ ! -f "$PERSONA_DIR/system.md" ]; then
@@ -75,8 +100,7 @@ EOF
 fi
 
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo "[talon] No isolated config found for instance ${INSTANCE:-default}; bootstrapping $CONFIG_FILE."
-  echo "[talon] If this instance previously lived under /share, start Talon CLI 0.3.0 once to migrate it."
+  echo "[talon] No config found for instance ${INSTANCE:-default}; bootstrapping $CONFIG_FILE."
   cat > "$CONFIG_FILE" <<EOF
 storage:
   type: sqlite
@@ -108,7 +132,7 @@ personas:
   - name: assistant
     model: $MODEL_JSON
     provider: openai-compatible
-    systemPromptFile: $WORKSPACE/personas/assistant/system.md
+    systemPromptFile: $SHARED_BASE/personas/assistant/system.md
     skills: []
     subagents: []
     capabilities:
@@ -137,7 +161,7 @@ EOF
 
 ipc:
   pollIntervalMs: 500
-  daemonSocketDir: $SHARED_IPC_DIR
+  daemonSocketDir: $SHARED_BASE/data/ipc/daemon
 
 queue:
   maxAttempts: 3
@@ -189,16 +213,14 @@ auth:
 logLevel: info
 dataDir: /data/talon/state
 EOF
-  : > "$BOOTSTRAP_MARKER"
-  echo "[talon] Bootstrap complete."
+  echo "[talon] Bootstrap complete. Future starts preserve $CONFIG_FILE."
 else
-  echo "[talon] Using isolated Talon workspace: $WORKSPACE"
+  echo "[talon] Using persistent Talon workspace: $SHARED_BASE"
 fi
 
-cd "$WORKSPACE"
+cd "$SHARED_BASE"
 export PATH="/opt/talond/node_modules/.bin:$PATH"
 echo "[talon] Instance: ${INSTANCE:-default}"
-echo "[talon] Workspace: $WORKSPACE"
-echo "[talon] Direct Home Assistant /share access: disabled"
+echo "[talon] Workspace: $SHARED_BASE"
 echo "[talon] Starting Talon Home Assistant add-on..."
 exec /usr/bin/tini -- node /opt/talond/dist/index.js --config "$CONFIG_FILE"

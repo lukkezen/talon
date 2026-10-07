@@ -1,5 +1,5 @@
 name: Talon CLI
-version: "0.3.1"
+version: "0.2.0"
 slug: talon_cli
 description: Manage a Talon workspace with the upstream Talon CLI.
 url: https://github.com/lukkezen/talon
@@ -13,7 +13,6 @@ ingress_port: 7681
 panel_icon: mdi:console
 map:
   - share:rw
-  - all_app_configs:rw
 options:
   instance: ""
 schema:

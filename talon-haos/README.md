@@ -9,7 +9,6 @@ The add-on intentionally keeps the Talon application itself upstream-compatible.
 - amd64 only (intended for the Intel NUC running Home Assistant OS)
 - persistent Talon state under `/data/talon`
 - OpenAI-compatible provider using the OpenAI API
-- WhatsApp via Baileys, including self-chat mode and persistent QR authentication
 - optional Telegram channel
 - no Docker sandbox inside Talon
 - no bundled Codex runner

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1
+
+- Forward-fix after the failed 0.6.0 app-config migration.
+- Restores the last known-good Home Assistant mapping with `share:rw`.
+- Removes dependency on `app_config` / `all_app_configs` for Talon and Talon CLI.
+- Uses a version higher than 0.6.0 so Home Assistant can install this as a normal upgrade.
+
 ## 0.5.1
 
 - Fixes `talonctl status` and `talonctl reload` from the separate Talon CLI add-on.

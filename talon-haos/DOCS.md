@@ -50,6 +50,10 @@ Each workspace contains `talond.yaml`, personas, skills, subagents, userdata and
 
 The daemon SQLite/runtime state remains under its add-on-private `/data/talon/state`. Separate Home Assistant add-on installations therefore keep separate state even when they use the same wrapper code.
 
+### CLI status/reload IPC
+
+Upstream Talon always places its file-based daemon control IPC under `<dataDir>/ipc/daemon`. Because our `dataDir` is private, the wrapper redirects **only** `/data/talon/state/ipc/daemon` with a symlink to the selected shared workspace (`<workspace>/data/ipc/daemon`). This lets the matching Talon CLI use `talonctl status` and `talonctl reload` while the SQLite database, host-tools socket, and the rest of `/data/talon/state` stay private.
+
 ## Managing Talon
 
 Set the same instance in Talon CLI, restart the CLI add-on, then use normal upstream commands:

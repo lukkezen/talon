@@ -43,8 +43,20 @@ if [ ! -f "$CONFIG_FILE" ] && [ -f "$LEGACY_BASE/config/talond.yaml" ]; then
     fi
   done
 
-  sed -i     -e 's#/data/talon/personas#/share/talon/personas#g'     -e 's#/data/talon/skills#/share/talon/skills#g'     -e 's#/data/talon/subagents#/share/talon/subagents#g'     -e 's#/data/talon/userdata#/share/talon/userdata#g'     -e 's#/data/talon/state/ipc/daemon#/share/talon/data/ipc/daemon#g'     "$CONFIG_FILE"
+  sed -i \
+    -e 's#/data/talon/personas#/share/talon/personas#g' \
+    -e 's#/data/talon/skills#/share/talon/skills#g' \
+    -e 's#/data/talon/subagents#/share/talon/subagents#g' \
+    -e 's#/data/talon/userdata#/share/talon/userdata#g' \
+    -e 's#/data/talon/state/ipc/daemon#/share/talon/data/ipc/daemon#g' \
+    "$CONFIG_FILE"
 
+  # Replace bootstrap secrets copied from the old private config with
+  # environment placeholders before the config lives under /share.
+  sed -i \
+    -e 's#^[[:space:]]*botToken:.*#      botToken: ${TELEGRAM_BOT_TOKEN}#' \
+    -e 's#^[[:space:]]*apiKey:.*#      apiKey: ${OPENAI_API_KEY}#' \
+    "$CONFIG_FILE"
   echo "[talon] Migration complete. Legacy /data/talon configuration was left intact as a fallback copy."
 fi
 

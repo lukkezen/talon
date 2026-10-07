@@ -188,11 +188,18 @@ dataDir: /data/talon/state
 EOF
 fi
 
-# Keep the migrated config aligned with upstream Talon runtime IPC.
-# Pre-0.7 configs may still point daemonSocketDir at the former shared workspace.
-if grep -q "^[[:space:]]*daemonSocketDir:" "$CONFIG_FILE"; then
-  sed -i "s#^[[:space:]]*daemonSocketDir:.*#  daemonSocketDir: $IPC_DIR#" "$CONFIG_FILE"
+# Upstream talonctl hardcodes data/ipc/daemon relative to its current workspace,
+# while talond hardcodes <dataDir>/ipc/daemon. Bridge those two private paths.
+CLI_IPC_PARENT="$WORKSPACE/data/ipc"
+CLI_IPC_DIR="$CLI_IPC_PARENT/daemon"
+mkdir -p "$CLI_IPC_PARENT"
+if [ -L "$CLI_IPC_DIR" ]; then
+  rm -f "$CLI_IPC_DIR"
+elif [ -e "$CLI_IPC_DIR" ]; then
+  rm -rf "$CLI_IPC_DIR"
 fi
+ln -s "$IPC_DIR" "$CLI_IPC_DIR"
+echo "[talon] CLI IPC bridge: $CLI_IPC_DIR -> $IPC_DIR"
 
 cat >/root/.bashrc <<EOF
 cd "$WORKSPACE"

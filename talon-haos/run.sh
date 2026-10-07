@@ -4,6 +4,7 @@ set -eu
 OPTIONS="/data/options.json"
 STATE_DIR="/data/talon/state"
 CONFIG_ROOT="/config"
+APP_CONFIG_MARKER="$CONFIG_ROOT/.talon-daemon-app-config"
 
 if [ ! -f "$OPTIONS" ]; then
   echo "[talon] Home Assistant options file not found: $OPTIONS"
@@ -32,6 +33,8 @@ PERSONA_DIR="$WORKSPACE/personas/assistant"
 SHARED_IPC_DIR="$WORKSPACE/data/ipc/daemon"
 PRIVATE_IPC_DIR="$STATE_DIR/ipc/daemon"
 BOOTSTRAP_MARKER="$WORKSPACE/.bootstrapped-v0.6"
+
+: > "$APP_CONFIG_MARKER"
 
 mkdir -p "$STATE_DIR/ipc" "$WORKSPACE/skills" "$WORKSPACE/personas" "$WORKSPACE/subagents" "$WORKSPACE/userdata" "$SHARED_IPC_DIR"
 
@@ -88,7 +91,7 @@ EOF
     name: personal-telegram
     enabled: true
     config:
-      botToken: ${TELEGRAM_BOT_TOKEN}
+      botToken: \${TELEGRAM_BOT_TOKEN}
       allowedChatIds:
         - $CHAT_ID_JSON
       pollingTimeoutSec: 30
@@ -180,7 +183,7 @@ auth:
   mode: api_key
   providers:
     openai:
-      apiKey: ${OPENAI_API_KEY}
+      apiKey: \${OPENAI_API_KEY}
       baseURL: https://api.openai.com/v1
 
 logLevel: info

@@ -1,29 +1,68 @@
 # Talon add-on documentation
 
-## Isolated Home Assistant storage
+## Optional instance
 
-Talon 0.6.0 no longer mounts Home Assistant’s general `/share` directory.
+The Home Assistant option `instance` selects the Talon workspace.
 
-The daemon uses its dedicated Home Assistant app config mounted as `/config`, with one workspace per instance:
+Default/backwards-compatible:
 
-```text
-/config/instances/default/
-/config/instances/D66/
+```yaml
+instance: ""
 ```
 
-The autonomous daemon therefore cannot directly read `/share/video-transcriber`, `/share/downloadclipper`, or other Home Assistant shares. Access to those files should go through explicitly configured MCP servers such as Read-only Files MCP.
+uses `/share/talon`.
 
-The SQLite database and host-tools socket remain private under `/data/talon/state`.
+A named instance such as:
 
-## Migration from pre-0.6
+```yaml
+instance: d66
+```
 
-1. Update/start Talon 0.6.0 once so Home Assistant creates its app config.
-2. Update/start Talon CLI 0.3.0 once. The CLI migrates the matching old `/share/talon*` workspace automatically.
-3. Restart Talon.
-4. Verify with `talonctl status` and `talonctl list-skills --persona assistant`.
+uses `/share/talon-instances/d66`.
 
-The old `/share` copy is left intact as a fallback.
+Use the same `instance` value in **Talon CLI** to manage that daemon.
 
-## CLI control IPC
+Named instances do not copy or migrate the default Talon workspace. If their workspace does not exist, they bootstrap a fresh `talond.yaml` using that add-on installation's own Home Assistant options.
 
-Only the transient daemon IPC directory is shared through the isolated workspace so `talonctl status` and `talonctl reload` continue to work. Talon upstream itself is not modified.
+Instance names may contain letters, numbers, dots, underscores and dashes. `..` and path traversal are rejected.
+
+## Install
+
+1. Install or deploy **Talon**.
+2. Configure the optional `instance` plus OpenAI and Telegram settings.
+3. Install **Talon CLI** and set the same `instance` when you want to manage this Talon.
+
+## Workspace layout
+
+Default:
+
+```text
+/share/talon/
+```
+
+Named:
+
+```text
+/share/talon-instances/<instance>/
+```
+
+Each workspace contains `talond.yaml`, personas, skills, subagents, userdata and the daemon IPC directory.
+
+The daemon SQLite/runtime state remains under its add-on-private `/data/talon/state`. Separate Home Assistant add-on installations therefore keep separate state even when they use the same wrapper code.
+
+### CLI status/reload IPC
+
+Upstream Talon always places its file-based daemon control IPC under `<dataDir>/ipc/daemon`. Because our `dataDir` is private, the wrapper redirects **only** `/data/talon/state/ipc/daemon` with a symlink to the selected shared workspace (`<workspace>/data/ipc/daemon`). This lets the matching Talon CLI use `talonctl status` and `talonctl reload` while the SQLite database, host-tools socket, and the rest of `/data/talon/state` stay private.
+
+## Managing Talon
+
+Set the same instance in Talon CLI, restart the CLI add-on, then use normal upstream commands:
+
+```sh
+talonctl list-personas
+talonctl list-skills
+talonctl add-skill --name postgram --persona assistant --format skillmd
+talonctl reload
+```
+
+Talon upstream itself is not modified.

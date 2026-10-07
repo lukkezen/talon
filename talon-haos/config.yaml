@@ -1,5 +1,5 @@
 name: Talon
-version: "0.5.0"
+version: "0.5.1"
 slug: talon
 description: Run the Talon autonomous agent daemon on Home Assistant OS.
 url: https://github.com/lukkezen/talon

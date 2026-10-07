@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+cd /share/talon
+export TALOND_CONFIG_PATH=/share/talon/talond.yaml
+
+exec node /opt/talond/dist/cli/index.js "$@"

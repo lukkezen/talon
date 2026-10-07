@@ -156,7 +156,7 @@ export class ChannelSendHandler {
    */
   async execute(args: ChannelSendArgs, context: ToolExecutionContext): Promise<ToolCallResult> {
     const requestId = context.requestId ?? 'unknown';
-    const { channelId, content, replyTo, attachments } = args;
+    const { channelId, content, attachments } = args;
 
     this.deps.logger.info(
       { requestId, runId: context.runId, threadId: context.threadId, personaId: context.personaId, channelId },
@@ -328,12 +328,27 @@ export class ChannelSendHandler {
         ? input.filename.trim()
         : pathName || 'attachment';
     const responseMime = response.headers.get('content-type')?.split(';')[0]?.trim();
+    const inferredMime = this.inferMimeType(filename);
     const mimeType =
       typeof input.mimeType === 'string' && input.mimeType.trim()
         ? input.mimeType.trim()
-        : responseMime || 'application/octet-stream';
+        : responseMime && responseMime !== 'application/octet-stream'
+          ? responseMime
+          : inferredMime ?? responseMime ?? 'application/octet-stream';
 
     return { filename, mimeType, data, size: data.byteLength };
+  }
+
+  private inferMimeType(filename: string): string | undefined {
+    const lower = filename.toLowerCase();
+    if (lower.endsWith('.mp4')) return 'video/mp4';
+    if (lower.endsWith('.mov')) return 'video/quicktime';
+    if (lower.endsWith('.webm')) return 'video/webm';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.pdf')) return 'application/pdf';
+    if (lower.endsWith('.txt')) return 'text/plain';
+    return undefined;
   }
 
   private persistOutboundMessage(input: {

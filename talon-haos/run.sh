@@ -42,7 +42,9 @@ Use configured MCP tools only when they are available and appropriate.
 EOF
 fi
 
-cat > "$CONFIG_FILE" <<EOF
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "[talon] No persistent config found; bootstrapping $CONFIG_FILE from Home Assistant options."
+  cat > "$CONFIG_FILE" <<EOF
 storage:
   type: sqlite
   path: /data/talon/state/talond.sqlite
@@ -156,5 +158,12 @@ logLevel: info
 dataDir: /data/talon/state
 EOF
 
+  echo "[talon] Bootstrap complete. Future starts will preserve this Talon config."
+else
+  echo "[talon] Using persistent Talon config: $CONFIG_FILE (not regenerated)."
+fi
+
+cd "$CONFIG_DIR"
+export PATH="/opt/talond/node_modules/.bin:$PATH"
 echo "[talon] Starting Talon Home Assistant add-on..."
 exec /usr/bin/tini -- node /opt/talond/dist/index.js --config "$CONFIG_FILE"

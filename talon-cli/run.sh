@@ -37,7 +37,10 @@ case "$INSTANCE" in
     ;;
 esac
 
-DAEMON_CONFIG_ROOTS="$(find /addon_configs -mindepth 1 -maxdepth 1 -type d -name '*_talon' 2>/dev/null || true)"
+DAEMON_CONFIG_ROOTS="$(find /addon_configs -mindepth 2 -maxdepth 2 -type f -name '.talon-daemon-app-config' -print 2>/dev/null | sed 's#/.talon-daemon-app-config$##' || true)"
+if [ -z "$DAEMON_CONFIG_ROOTS" ]; then
+  DAEMON_CONFIG_ROOTS="$(find /addon_configs -mindepth 1 -maxdepth 1 -type d -name '*_talon' 2>/dev/null || true)"
+fi
 DAEMON_CONFIG_ROOT="$(printf '%s\n' "$DAEMON_CONFIG_ROOTS" | sed '/^$/d' | head -n 1)"
 DAEMON_CONFIG_COUNT="$(printf '%s\n' "$DAEMON_CONFIG_ROOTS" | sed '/^$/d' | wc -l | tr -d ' ')"
 

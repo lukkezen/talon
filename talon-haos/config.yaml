@@ -1,5 +1,5 @@
 name: Talon
-version: "0.4.0"
+version: "0.5.0"
 slug: talon
 description: Run the Talon autonomous agent daemon on Home Assistant OS.
 url: https://github.com/lukkezen/talon
@@ -9,14 +9,27 @@ startup: application
 boot: auto
 init: false
 map:
-  - share:rw
+  - type: app_config
+    read_only: false
+    path: /talon
+  - type: share
+    read_only: true
+    path: /ha-share
+  - type: media
+    read_only: true
+    path: /ha-media
 options:
   openai_api_key: ""
   openai_model: "gpt-5.4"
   telegram_bot_token: ""
   telegram_chat_id: ""
+  readonly_sources: []
 schema:
   openai_api_key: password
   openai_model: str
   telegram_bot_token: password
   telegram_chat_id: str
+  readonly_sources:
+    - name: str
+      root: list(share|media)
+      path: str

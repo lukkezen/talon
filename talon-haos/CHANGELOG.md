@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.3
+
+- Fixes embedded `talonctl status` and `talonctl reload` using the actual upstream IPC behavior.
+- Upstream `talonctl` always uses `data/ipc/daemon` relative to the current workspace, while `talond` uses `<dataDir>/ipc/daemon`.
+- Adds a private symlink from `/data/talon/workspaces/<instance>/data/ipc/daemon` to `/data/talon/state/ipc/daemon`.
+- Removes the ineffective 0.7.2 YAML-only IPC rewrite.
+- Keeps Home Assistant `/share` completely unmounted.
+
 ## 0.7.2
 
 - Aligns migrated `ipc.daemonSocketDir` with `/data/talon/state/ipc/daemon`.

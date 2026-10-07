@@ -1,72 +1,21 @@
-# Talon CLI
+# Talon CLI add-on
 
-Open **Talon CLI** from the Home Assistant add-on page and click **Open Web UI**.
+Talon CLI 0.3.0 manages the isolated Talon daemon workspace.
 
-## Selecting a Talon instance
-
-The optional `instance` setting controls which Talon workspace the CLI manages.
-
-Leave it empty for the existing/default Talon:
-
-```yaml
-instance: ""
-```
-
-This uses:
+The CLI intentionally keeps manual `share:rw` access and additionally mounts `all_app_configs:rw`. It locates the Talon daemon app config, exposes it locally as `/config`, and manages:
 
 ```text
-/share/talon
+/config/instances/default
+/config/instances/<instance>
 ```
 
-Set an instance name, for example:
+On first start, if a matching legacy workspace exists under `/share/talon` or `/share/talon-instances/<instance>`, it is copied into the isolated workspace. The legacy copy is retained.
 
-```yaml
-instance: d66
-```
-
-This uses:
-
-```text
-/share/talon-instances/d66
-```
-
-The same CLI add-on can therefore be pointed at another Talon instance simply by changing this setting and restarting the CLI add-on.
-
-Instance names may contain letters, numbers, dots, underscores and dashes. Path traversal such as `..` is rejected.
-
-> The selected Talon daemon must itself use the same workspace. The CLI does not create or redirect a daemon; it only selects which workspace `talonctl` manages.
-
-## Common commands
+After migration restart Talon, then normal upstream commands continue to work:
 
 ```sh
-talonctl config-show
-talonctl list-channels
+talonctl status
 talonctl list-personas
-talonctl list-skills
-talonctl list-providers
-talonctl list-capabilities
-```
-
-Add a skill:
-
-```sh
-talonctl add-skill --name postgram --persona assistant --format skillmd
-```
-
-Add an MCP server:
-
-```sh
-talonctl add-mcp \
-  --skill postgram \
-  --name postgram \
-  --transport http \
-  --url https://example.com/mcp
-```
-
-After changing config/personas/channels:
-
-```sh
+talonctl list-skills --persona assistant
 talonctl reload
 ```
-
-The terminal banner shows the selected instance and workspace so it is immediately visible which Talon you are managing.

@@ -1,14 +1,45 @@
 #!/bin/sh
 set -eu
 
-WORKSPACE="${TALON_WORKSPACE:-}"
-if [ -z "$WORKSPACE" ]; then
-  echo "TALON_WORKSPACE is not set. Start commands from the Talon CLI add-on terminal." >&2
-  exit 1
+OPTIONS="/data/options.json"
+
+if [ -n "${TALON_WORKSPACE:-}" ]; then
+  WORKSPACE="$TALON_WORKSPACE"
+else
+  INSTANCE=""
+  if [ -f "$OPTIONS" ]; then
+    INSTANCE="$(node -e '
+      const fs = require("fs");
+      try {
+        const o = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        process.stdout.write(String(o.instance ?? "").trim());
+      } catch {
+        process.stdout.write("");
+      }
+    ' "$OPTIONS")"
+  fi
+
+  case "$INSTANCE" in
+    "")
+      WORKSPACE="/share/talon"
+      ;;
+    *[!A-Za-z0-9._-]*|.*|*..*)
+      echo "Invalid Talon CLI instance name: '$INSTANCE'" >&2
+      exit 1
+      ;;
+    *)
+      WORKSPACE="/share/talon-instances/$INSTANCE"
+      ;;
+  esac
 fi
 
 cd "$WORKSPACE"
+export TALON_WORKSPACE="$WORKSPACE"
 export TALOND_CONFIG_PATH="$WORKSPACE/talond.yaml"
+
+# The shared config intentionally contains environment placeholders instead
+# of real Home Assistant secrets. Harmless placeholders let config-oriented
+# CLI commands parse the file without copying secrets into this add-on.
 export OPENAI_API_KEY="${OPENAI_API_KEY:-talon-cli-placeholder}"
 export TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-talon-cli-placeholder}"
 

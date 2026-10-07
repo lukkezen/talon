@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2
+
+- Aligns migrated `ipc.daemonSocketDir` with `/data/talon/state/ipc/daemon`.
+- Fixes embedded `talonctl status` and `talonctl reload` timing out while the daemon is running.
+- Keeps `/share` completely unmounted.
+
 ## 0.7.1
 
 - Removes the Home Assistant `/share` mount entirely after the 0.7.0 migration.

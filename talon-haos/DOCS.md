@@ -1,68 +1,29 @@
-# Talon add-on documentation
+# Talon Home Assistant app
 
-## Optional instance
+## Talon 0.7: daemon and CLI together
 
-The Home Assistant option `instance` selects the Talon workspace.
-
-Default/backwards-compatible:
-
-```yaml
-instance: ""
-```
-
-uses `/share/talon`.
-
-A named instance such as:
-
-```yaml
-instance: d66
-```
-
-uses `/share/talon-instances/d66`.
-
-Use the same `instance` value in **Talon CLI** to manage that daemon.
-
-Named instances do not copy or migrate the default Talon workspace. If their workspace does not exist, they bootstrap a fresh `talond.yaml` using that add-on installation's own Home Assistant options.
-
-Instance names may contain letters, numbers, dots, underscores and dashes. `..` and path traversal are rejected.
-
-## Install
-
-1. Install or deploy **Talon**.
-2. Configure the optional `instance` plus OpenAI and Telegram settings.
-3. Install **Talon CLI** and set the same `instance` when you want to manage this Talon.
-
-## Workspace layout
-
-Default:
+Talon 0.7 runs the upstream Talon daemon and upstream Talon CLI in one Home Assistant app/container. The persistent workspace lives in app-private storage:
 
 ```text
-/share/talon/
+/data/talon/workspaces/default
+/data/talon/workspaces/<instance>
 ```
 
-Named:
-
-```text
-/share/talon-instances/<instance>/
-```
-
-Each workspace contains `talond.yaml`, personas, skills, subagents, userdata and the daemon IPC directory.
-
-The daemon SQLite/runtime state remains under its add-on-private `/data/talon/state`. Separate Home Assistant add-on installations therefore keep separate state even when they use the same wrapper code.
-
-### CLI status/reload IPC
-
-Upstream Talon always places its file-based daemon control IPC under `<dataDir>/ipc/daemon`. Because our `dataDir` is private, the wrapper redirects **only** `/data/talon/state/ipc/daemon` with a symlink to the selected shared workspace (`<workspace>/data/ipc/daemon`). This lets the matching Talon CLI use `talonctl status` and `talonctl reload` while the SQLite database, host-tools socket, and the rest of `/data/talon/state` stay private.
-
-## Managing Talon
-
-Set the same instance in Talon CLI, restart the CLI add-on, then use normal upstream commands:
+Open the Talon app Web UI for the management terminal. Normal commands work there:
 
 ```sh
+talonctl status
 talonctl list-personas
-talonctl list-skills
-talonctl add-skill --name postgram --persona assistant --format skillmd
+talonctl list-skills --persona assistant
 talonctl reload
 ```
 
-Talon upstream itself is not modified.
+The separate Talon CLI app is no longer needed once this setup has been verified.
+
+## 0.7.0 migration bridge
+
+Version 0.7.0 temporarily mounts Home Assistant `/share` **read-only**. If an old workspace exists at `/share/talon` or `/share/talon-instances/<instance>`, it is copied once into private `/data`. The old workspace is never modified or deleted.
+
+After migration is confirmed, upgrade to 0.7.1. That version will remove `/share` entirely. External files such as transcripts must then be accessed through explicitly configured MCP servers.
+
+No upstream Talon source code is modified.

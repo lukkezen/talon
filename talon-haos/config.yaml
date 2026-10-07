@@ -1,15 +1,18 @@
 name: Talon
-version: "0.6.1"
+version: "0.7.0"
 slug: talon
-description: Run the Talon autonomous agent daemon on Home Assistant OS.
+description: Run Talon and its management CLI in one isolated Home Assistant app.
 url: https://github.com/lukkezen/talon
 arch:
   - amd64
 startup: application
 boot: auto
 init: false
+ingress: true
+ingress_port: 7681
+panel_icon: mdi:console
 map:
-  - share:rw
+  - share:ro
 options:
   instance: ""
   openai_api_key: ""

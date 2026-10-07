@@ -10,7 +10,12 @@ LABEL \
 
 USER root
 
-COPY run.sh /run.sh
-RUN chmod 0755 /run.sh && mkdir -p /data/talon
+RUN curl -fsSL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 \
+      -o /usr/local/bin/ttyd \
+    && chmod 0755 /usr/local/bin/ttyd
 
-ENTRYPOINT ["/run.sh"]
+COPY run.sh /run.sh
+COPY talonctl /usr/local/bin/talonctl
+RUN chmod 0755 /run.sh /usr/local/bin/talonctl && mkdir -p /data/talon
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/run.sh"]

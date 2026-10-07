@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1
+
+- Fixes `talonctl status` and `talonctl reload` from the separate Talon CLI add-on.
+- Keeps Talon `dataDir`, SQLite state, and host-tools socket private.
+- Redirects only upstream Talon's transient `<dataDir>/ipc/daemon` directory to the matching shared instance workspace.
+- Does not modify upstream Talon.
+
 ## 0.5.0
 
 - Adds optional `instance` configuration to the Talon daemon wrapper.

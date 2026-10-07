@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+- Removes the general Home Assistant `share:rw` mount from the autonomous Talon daemon.
+- Stores daemon workspaces in dedicated `app_config` under `/config/instances/<instance>`.
+- Keeps SQLite/runtime state private under `/data`.
+- Preserves CLI control IPC without exposing `/share` to the daemon.
+- External Home Assistant files must be reached through explicitly configured MCP servers.
+
 ## 0.5.1
 
 - Fixes `talonctl status` and `talonctl reload` from the separate Talon CLI add-on.

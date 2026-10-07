@@ -269,6 +269,30 @@ const TOOLS = [
           description:
             'Optional explicit recipient chat id on the target channel (e.g. Telegram chat_id, Slack channel id). Required for CLI-created scheduled tasks that have no originExternalId.',
         },
+        attachments: {
+          type: 'array' as const,
+          maxItems: 10,
+          description:
+            'Optional files to attach. Use short-lived download URLs returned by trusted tools such as ha-files copy_to_export; Talon fetches the bytes on the host before sending.',
+          items: {
+            type: 'object' as const,
+            properties: {
+              url: {
+                type: 'string' as const,
+                description: 'HTTP(S) URL for the file to fetch.',
+              },
+              filename: {
+                type: 'string' as const,
+                description: 'Optional filename override.',
+              },
+              mimeType: {
+                type: 'string' as const,
+                description: 'Optional MIME type override, e.g. video/mp4.',
+              },
+            },
+            required: ['url'],
+          },
+        },
       },
       required: ['channelId', 'content'],
     },

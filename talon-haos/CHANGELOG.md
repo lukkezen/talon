@@ -1,13 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- Removes the Home Assistant WhatsApp/Baileys self-chat integration.
+- Removes WhatsApp pairing and QR-code dependencies from the add-on image.
+- Keeps Telegram as the optional chat channel.
+
 ## 0.2.0
 
-- Adds WhatsApp via Talon's Baileys connector.
-- Enables self-chat mode by default.
-- Adds configurable `@Talon` trigger word.
-- Runs first-time WhatsApp QR pairing from the Home Assistant add-on log.
-- Persists WhatsApp credentials under `/data/talon/baileys-auth`.
-- Keeps Telegram support available in parallel.
+- Added WhatsApp/Baileys support; removed again in 0.2.1.
 
 ## 0.1.0
 

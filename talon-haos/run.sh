@@ -188,7 +188,11 @@ dataDir: /data/talon/state
 EOF
 fi
 
-mkdir -p "$WORKSPACE/data/ipc/daemon"
+# Keep the migrated config aligned with upstream Talon runtime IPC.
+# Pre-0.7 configs may still point daemonSocketDir at the former shared workspace.
+if grep -q "^[[:space:]]*daemonSocketDir:" "$CONFIG_FILE"; then
+  sed -i "s#^[[:space:]]*daemonSocketDir:.*#  daemonSocketDir: $IPC_DIR#" "$CONFIG_FILE"
+fi
 
 cat >/root/.bashrc <<EOF
 cd "$WORKSPACE"

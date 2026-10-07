@@ -30,7 +30,7 @@ All local Talon data is stored below:
 
 `/data/talon`
 
-This includes SQLite state, the generated Talon configuration, persona prompts, skills, sub-agents and user data.
+This includes SQLite state, the Talon configuration, persona prompts, skills, sub-agents and user data.\n\n## Upstream-style Talon configuration\n\nHome Assistant options are now used only to bootstrap `talond.yaml` when `/data/talon/config/talond.yaml` does not exist yet. Once created, the file is persistent and is not regenerated on add-on restart.\n\nThis keeps the add-on close to upstream Talon: `talond.yaml`, personas, skills and MCP definitions are the source of truth. The upstream CLI is available in the image as `node /opt/talond/dist/cli/index.js`. Run CLI commands from `/data/talon/config`, or pass `--config /data/talon/config/talond.yaml`. For skill/MCP commands, use `--skills-dir /data/talon/skills` where applicable.\n\nAfter changing configuration with the CLI, upstream Talon supports hot reload through `talonctl reload`/the equivalent CLI command using the daemon IPC directory `/data/talon/state/ipc/daemon`.
 
 ## Security
 

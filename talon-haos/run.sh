@@ -2,16 +2,13 @@
 set -eu
 
 OPTIONS="/data/options.json"
-BASE="/data/talon"
-CONFIG_DIR="$BASE/config"
-STATE_DIR="$BASE/state"
-PERSONA_DIR="$BASE/personas/assistant"
-SKILLS_DIR="$BASE/skills"
-SUBAGENTS_DIR="$BASE/subagents"
-USERDATA_DIR="$BASE/userdata"
-CONFIG_FILE="$CONFIG_DIR/talond.yaml"
+LEGACY_BASE="/data/talon"
+STATE_DIR="$LEGACY_BASE/state"
+SHARED_BASE="/share/talon"
+CONFIG_FILE="$SHARED_BASE/talond.yaml"
+PERSONA_DIR="$SHARED_BASE/personas/assistant"
 
-mkdir -p "$CONFIG_DIR" "$STATE_DIR" "$PERSONA_DIR" "$SKILLS_DIR" "$SUBAGENTS_DIR" "$USERDATA_DIR"
+mkdir -p "$STATE_DIR" "$SHARED_BASE/skills" "$SHARED_BASE/personas" "$SHARED_BASE/subagents" "$SHARED_BASE/userdata" "$SHARED_BASE/data/ipc/daemon"
 
 if [ ! -f "$OPTIONS" ]; then
   echo "[talon] Home Assistant options file not found: $OPTIONS"
@@ -30,10 +27,40 @@ fi
 
 export OPENAI_API_KEY
 export TELEGRAM_BOT_TOKEN
+export TALOND_CONFIG_PATH="$CONFIG_FILE"
 
 MODEL_JSON="$(printf '%s' "$OPENAI_MODEL" | jq -Rs .)"
 CHAT_ID_JSON="$(printf '%s' "$TELEGRAM_CHAT_ID" | jq -Rs .)"
 
+# One-time migration from the pre-0.4 private add-on layout.
+if [ ! -f "$CONFIG_FILE" ] && [ -f "$LEGACY_BASE/config/talond.yaml" ]; then
+  echo "[talon] Migrating Talon configuration to shared upstream-style workspace: $SHARED_BASE"
+  cp "$LEGACY_BASE/config/talond.yaml" "$CONFIG_FILE"
+
+  for dir in personas skills subagents userdata; do
+    if [ -d "$LEGACY_BASE/$dir" ]; then
+      cp -a "$LEGACY_BASE/$dir/." "$SHARED_BASE/$dir/" 2>/dev/null || true
+    fi
+  done
+
+  sed -i \
+    -e 's#/data/talon/personas#/share/talon/personas#g' \
+    -e 's#/data/talon/skills#/share/talon/skills#g' \
+    -e 's#/data/talon/subagents#/share/talon/subagents#g' \
+    -e 's#/data/talon/userdata#/share/talon/userdata#g' \
+    -e 's#/data/talon/state/ipc/daemon#/share/talon/data/ipc/daemon#g' \
+    "$CONFIG_FILE"
+
+  # Replace bootstrap secrets copied from the old private config with
+  # environment placeholders before the config lives under /share.
+  sed -i \
+    -e 's#^[[:space:]]*botToken:.*#      botToken: ${TELEGRAM_BOT_TOKEN}#' \
+    -e 's#^[[:space:]]*apiKey:.*#      apiKey: ${OPENAI_API_KEY}#' \
+    "$CONFIG_FILE"
+  echo "[talon] Migration complete. Legacy /data/talon configuration was left intact as a fallback copy."
+fi
+
+mkdir -p "$PERSONA_DIR"
 if [ ! -f "$PERSONA_DIR/system.md" ]; then
   cat > "$PERSONA_DIR/system.md" <<'EOF'
 You are Talon, a private personal assistant running locally as a Home Assistant add-on.
@@ -42,8 +69,9 @@ Use configured MCP tools only when they are available and appropriate.
 EOF
 fi
 
+# Fresh install: bootstrap once from Home Assistant options.
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo "[talon] No persistent config found; bootstrapping $CONFIG_FILE from Home Assistant options."
+  echo "[talon] No Talon config found; bootstrapping $CONFIG_FILE from Home Assistant options."
   cat > "$CONFIG_FILE" <<EOF
 storage:
   type: sqlite
@@ -52,31 +80,30 @@ storage:
 channels:
 EOF
 
-if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-  cat >> "$CONFIG_FILE" <<EOF
+  if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+    cat >> "$CONFIG_FILE" <<EOF
   - type: telegram
     name: personal-telegram
     enabled: true
     config:
-      botToken: ${TELEGRAM_BOT_TOKEN}
+      botToken: \${TELEGRAM_BOT_TOKEN}
       allowedChatIds:
         - $CHAT_ID_JSON
       pollingTimeoutSec: 30
 EOF
-else
-  cat >> "$CONFIG_FILE" <<'EOF'
+  else
+    cat >> "$CONFIG_FILE" <<'EOF'
   []
 EOF
-  echo "[talon] Telegram is not configured; Talon will start without a chat channel."
-fi
+  fi
 
-cat >> "$CONFIG_FILE" <<EOF
+  cat >> "$CONFIG_FILE" <<EOF
 
 personas:
   - name: assistant
     model: $MODEL_JSON
     provider: openai-compatible
-    systemPromptFile: /data/talon/personas/assistant/system.md
+    systemPromptFile: /share/talon/personas/assistant/system.md
     skills: []
     subagents: []
     capabilities:
@@ -89,23 +116,23 @@ personas:
 bindings:
 EOF
 
-if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-  cat >> "$CONFIG_FILE" <<'EOF'
+  if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+    cat >> "$CONFIG_FILE" <<'EOF'
   - persona: assistant
     channel: personal-telegram
     isDefault: true
 EOF
-else
-  cat >> "$CONFIG_FILE" <<'EOF'
+  else
+    cat >> "$CONFIG_FILE" <<'EOF'
   []
 EOF
-fi
+  fi
 
-cat >> "$CONFIG_FILE" <<EOF
+  cat >> "$CONFIG_FILE" <<EOF
 
 ipc:
   pollIntervalMs: 500
-  daemonSocketDir: /data/talon/state/ipc/daemon
+  daemonSocketDir: /share/talon/data/ipc/daemon
 
 queue:
   maxAttempts: 3
@@ -151,19 +178,18 @@ auth:
   mode: api_key
   providers:
     openai:
-      apiKey: ${OPENAI_API_KEY}
+      apiKey: \${OPENAI_API_KEY}
       baseURL: https://api.openai.com/v1
 
 logLevel: info
 dataDir: /data/talon/state
 EOF
-
-  echo "[talon] Bootstrap complete. Future starts will preserve this Talon config."
+  echo "[talon] Bootstrap complete. Future starts preserve $CONFIG_FILE."
 else
-  echo "[talon] Using persistent Talon config: $CONFIG_FILE (not regenerated)."
+  echo "[talon] Using persistent Talon workspace: $SHARED_BASE"
 fi
 
-cd "$CONFIG_DIR"
+cd "$SHARED_BASE"
 export PATH="/opt/talond/node_modules/.bin:$PATH"
 echo "[talon] Starting Talon Home Assistant add-on..."
 exec /usr/bin/tini -- node /opt/talond/dist/index.js --config "$CONFIG_FILE"

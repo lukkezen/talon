@@ -1,0 +1,15 @@
+name: Talon CLI
+version: "0.1.0"
+slug: talon_cli
+description: Manage the shared Talon workspace with the upstream Talon CLI.
+url: https://github.com/lukkezen/talon
+arch:
+  - amd64
+startup: application
+boot: manual
+init: false
+ingress: true
+ingress_port: 7681
+panel_icon: mdi:console
+map:
+  - share:rw

@@ -3,35 +3,77 @@
 ## Install
 
 1. In Home Assistant, open **Settings → Add-ons → Add-on Store**.
-2. Open the repository menu and add:
+2. Add the repository:
    `https://github.com/lukkezen/talon`
-3. Refresh the add-on store.
-4. Install **Talon**.
+3. Install **Talon**.
+4. Optionally install **Talon CLI** from the same repository.
 
-## Configuration
+## Home Assistant bootstrap options
 
-At minimum, set:
+For a fresh installation, configure at least:
 
-- `openai_api_key`: an OpenAI API key.
-- `openai_model`: defaults to `gpt-5.4`.
+- `openai_api_key`
+- `openai_model`
 
-### Telegram
+For Telegram:
 
-To use Telegram, set:
+- `telegram_bot_token`
+- `telegram_chat_id`
 
-- `telegram_bot_token`: token from BotFather.
-- `telegram_chat_id`: the Telegram chat ID allowed to talk to Talon.
+These options bootstrap the initial Talon configuration. After that, `/share/talon/talond.yaml` is the source of truth.
 
-If Telegram is left empty, the daemon still starts but has no chat channel.
+## Shared upstream-style workspace
 
-## Persistent data
+Managed Talon files live in:
 
-All local Talon data is stored below:
+`/share/talon`
 
-`/data/talon`
+Layout:
 
-This includes SQLite state, the Talon configuration, persona prompts, skills, sub-agents and user data.\n\n## Upstream-style Talon configuration\n\nHome Assistant options are now used only to bootstrap `talond.yaml` when `/data/talon/config/talond.yaml` does not exist yet. Once created, the file is persistent and is not regenerated on add-on restart.\n\nThis keeps the add-on close to upstream Talon: `talond.yaml`, personas, skills and MCP definitions are the source of truth. The upstream CLI is available in the image as `node /opt/talond/dist/cli/index.js`. Run CLI commands from `/data/talon/config`, or pass `--config /data/talon/config/talond.yaml`. For skill/MCP commands, use `--skills-dir /data/talon/skills` where applicable.\n\nAfter changing configuration with the CLI, upstream Talon supports hot reload through `talonctl reload`/the equivalent CLI command using the daemon IPC directory `/data/talon/state/ipc/daemon`.
+```text
+/share/talon/
+├── talond.yaml
+├── personas/
+├── skills/
+├── subagents/
+├── userdata/
+└── data/
+    └── ipc/
+        └── daemon/
+```
+
+The SQLite database and other daemon runtime state remain private under:
+
+`/data/talon/state`
+
+This keeps the database private to the daemon while allowing the separate Talon CLI add-on to manage configuration using upstream Talon commands.
+
+## Upgrade from 0.3.x
+
+On the first 0.4.0 start, if `/share/talon/talond.yaml` does not exist but the old `/data/talon/config/talond.yaml` does, the add-on:
+
+1. copies the existing config to `/share/talon/talond.yaml`;
+2. copies personas, skills, subagents and userdata to the shared workspace;
+3. updates known absolute paths to the shared locations;
+4. moves the IPC path to `/share/talon/data/ipc/daemon`.
+
+The old files under `/data/talon` are deliberately left in place as a fallback copy.
+
+## Managing Talon
+
+Use the **Talon CLI** add-on. It opens a Home Assistant Ingress terminal in `/share/talon`.
+
+Examples:
+
+```sh
+talonctl list-personas
+talonctl list-skills
+talonctl add-skill --name postgram --persona assistant --format skillmd
+talonctl reload
+```
+
+This keeps Talon itself unmodified: the daemon and CLI both come from the upstream Talon image.
 
 ## Security
 
-This Home Assistant build deliberately does not expose Docker to Talon. Home Assistant OS manages containers itself, and giving Talon access to the Docker socket would substantially increase privileges.
+No Docker socket is exposed to Talon. The CLI add-on receives read/write access only to Home Assistant's shared `/share` mount.

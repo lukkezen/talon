@@ -10,6 +10,9 @@ LABEL \
 
 USER root
 
+WORKDIR /opt/talond
+RUN npm install --no-save qrcode-terminal
+
 COPY run.sh /run.sh
 RUN chmod 0755 /run.sh && mkdir -p /data/talon
 

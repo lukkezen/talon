@@ -24,6 +24,6 @@ The separate Talon CLI app is no longer needed once this setup has been verified
 
 Version 0.7.0 temporarily mounts Home Assistant `/share` **read-only**. If an old workspace exists at `/share/talon` or `/share/talon-instances/<instance>`, it is copied once into private `/data`. The old workspace is never modified or deleted.
 
-After migration is confirmed, upgrade to 0.7.1. That version will remove `/share` entirely. External files such as transcripts must then be accessed through explicitly configured MCP servers.
+Version 0.7.1 removes `/share` entirely. It also cleans up the old pre-0.7 IPC symlink that pointed from `/data/talon/state/ipc/daemon` into `/share`, recreating the IPC directory locally and writable. External files such as transcripts must now be accessed through explicitly configured MCP servers.
 
 No upstream Talon source code is modified.

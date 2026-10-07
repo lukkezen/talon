@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+- Removes the Home Assistant `/share` mount entirely after the 0.7.0 migration.
+- Removes the old pre-0.7 IPC symlink into `/share` and recreates `/data/talon/state/ipc/daemon` as a local writable directory.
+- Fixes `EROFS: read-only file system, chmod .../ipc/daemon/input` seen after upgrading from the shared-workspace wrapper.
+- Keeps daemon and `talonctl` together in the same app/container.
+- External Home Assistant files are now accessible to Talon only through explicitly configured MCP servers.
+
 ## 0.7.0
 
 - Combines the Talon daemon and management CLI in one Home Assistant app.

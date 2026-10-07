@@ -1,5 +1,5 @@
 name: Talon
-version: "0.7.0"
+version: "0.7.1"
 slug: talon
 description: Run Talon and its management CLI in one isolated Home Assistant app.
 url: https://github.com/lukkezen/talon
@@ -11,8 +11,7 @@ init: false
 ingress: true
 ingress_port: 7681
 panel_icon: mdi:console
-map:
-  - share:ro
+map: []
 options:
   instance: ""
   openai_api_key: ""

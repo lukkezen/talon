@@ -15,7 +15,6 @@ INSTANCE="$(jq -r '.instance // ""' "$OPTIONS" | xargs)"
 case "$INSTANCE" in
   "")
     INSTANCE_DIR="default"
-    LEGACY_WORKSPACE="/share/talon"
     ;;
   *[!A-Za-z0-9._-]*|.*|*..*)
     echo "[talon] Invalid instance name: '$INSTANCE'"
@@ -24,7 +23,6 @@ case "$INSTANCE" in
     ;;
   *)
     INSTANCE_DIR="$INSTANCE"
-    LEGACY_WORKSPACE="/share/talon-instances/$INSTANCE"
     ;;
 esac
 
@@ -34,6 +32,16 @@ PERSONA_DIR="$WORKSPACE/personas/assistant"
 MIGRATION_MARKER="$WORKSPACE/.migrated-from-share-v070"
 
 mkdir -p "$STATE_DIR" "$WORKSPACE" "$WORKSPACE/skills" "$WORKSPACE/personas" "$WORKSPACE/subagents" "$WORKSPACE/userdata"
+
+# Pre-0.7 wrappers redirected this transient IPC directory to /share with a symlink.
+# The daemon and CLI now live in the same container, so keep IPC local and writable.
+IPC_DIR="$STATE_DIR/ipc/daemon"
+mkdir -p "$STATE_DIR/ipc"
+if [ -L "$IPC_DIR" ] || [ -e "$IPC_DIR" ]; then
+  rm -rf "$IPC_DIR"
+fi
+mkdir -p "$IPC_DIR"
+echo "[talon] Local daemon IPC: $IPC_DIR"
 
 OPENAI_API_KEY="$(jq -r '.openai_api_key // ""' "$OPTIONS")"
 OPENAI_MODEL="$(jq -r '.openai_model // "gpt-5.4"' "$OPTIONS")"
@@ -54,20 +62,6 @@ export PATH="/usr/local/bin:/opt/talond/node_modules/.bin:$PATH"
 
 MODEL_JSON="$(printf '%s' "$OPENAI_MODEL" | jq -Rs .)"
 CHAT_ID_JSON="$(printf '%s' "$TELEGRAM_CHAT_ID" | jq -Rs .)"
-
-# 0.7.0 migration bridge: /share is read-only and used only for this copy.
-if [ ! -f "$CONFIG_FILE" ] && [ -f "$LEGACY_WORKSPACE/talond.yaml" ]; then
-  echo "[talon] Migrating legacy workspace read-only:"
-  echo "[talon]   $LEGACY_WORKSPACE -> $WORKSPACE"
-  rm -rf "$WORKSPACE"
-  mkdir -p "$WORKSPACE"
-  cp -a "$LEGACY_WORKSPACE/." "$WORKSPACE/"
-
-  sed -i -e "s#$LEGACY_WORKSPACE#$WORKSPACE#g" -e "s#/share/talon-instances/$INSTANCE#$WORKSPACE#g" -e "s#/share/talon#$WORKSPACE#g" "$CONFIG_FILE"
-
-  : > "$MIGRATION_MARKER"
-  echo "[talon] Migration complete. Legacy /share workspace left untouched."
-fi
 
 mkdir -p "$PERSONA_DIR"
 if [ ! -f "$PERSONA_DIR/system.md" ]; then

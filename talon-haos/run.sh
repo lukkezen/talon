@@ -28,8 +28,21 @@ esac
 
 CONFIG_FILE="$SHARED_BASE/talond.yaml"
 PERSONA_DIR="$SHARED_BASE/personas/assistant"
+SHARED_IPC_DIR="$SHARED_BASE/data/ipc/daemon"
+PRIVATE_IPC_DIR="$STATE_DIR/ipc/daemon"
 
-mkdir -p "$STATE_DIR" "$SHARED_BASE/skills" "$SHARED_BASE/personas" "$SHARED_BASE/subagents" "$SHARED_BASE/userdata" "$SHARED_BASE/data/ipc/daemon"
+mkdir -p "$STATE_DIR/ipc" "$SHARED_BASE/skills" "$SHARED_BASE/personas" "$SHARED_BASE/subagents" "$SHARED_BASE/userdata" "$SHARED_IPC_DIR"
+
+# Upstream Talon always serves daemon file-IPC from <dataDir>/ipc/daemon.
+# Keep dataDir private, but redirect only that transient IPC directory into
+# the selected shared workspace so Talon CLI can use status/reload safely.
+if [ -L "$PRIVATE_IPC_DIR" ]; then
+  rm -f "$PRIVATE_IPC_DIR"
+elif [ -e "$PRIVATE_IPC_DIR" ]; then
+  rm -rf "$PRIVATE_IPC_DIR"
+fi
+ln -s "$SHARED_IPC_DIR" "$PRIVATE_IPC_DIR"
+echo "[talon] Shared CLI IPC: $PRIVATE_IPC_DIR -> $SHARED_IPC_DIR"
 
 OPENAI_API_KEY="$(jq -r '.openai_api_key // ""' "$OPTIONS")"
 OPENAI_MODEL="$(jq -r '.openai_model // "gpt-5.4"' "$OPTIONS")"

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+- Adds optional `instance` configuration to the Talon daemon wrapper.
+- Empty instance stays backwards-compatible with `/share/talon`.
+- Named instances use `/share/talon-instances/<instance>`.
+- Named instances bootstrap independently and do not inherit the default workspace.
+- Adds path-traversal validation for instance names.
+- Logs active instance and workspace at startup.
+- Designed to pair with Talon CLI 0.2.0 using the same instance value.
+
+# Changelog
+
 ## 0.4.0
 
 - Adds shared upstream-style Talon workspace at `/share/talon`.

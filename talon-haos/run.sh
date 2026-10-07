@@ -4,16 +4,32 @@ set -eu
 OPTIONS="/data/options.json"
 LEGACY_BASE="/data/talon"
 STATE_DIR="$LEGACY_BASE/state"
-SHARED_BASE="/share/talon"
-CONFIG_FILE="$SHARED_BASE/talond.yaml"
-PERSONA_DIR="$SHARED_BASE/personas/assistant"
-
-mkdir -p "$STATE_DIR" "$SHARED_BASE/skills" "$SHARED_BASE/personas" "$SHARED_BASE/subagents" "$SHARED_BASE/userdata" "$SHARED_BASE/data/ipc/daemon"
 
 if [ ! -f "$OPTIONS" ]; then
   echo "[talon] Home Assistant options file not found: $OPTIONS"
   exit 1
 fi
+
+INSTANCE="$(jq -r '.instance // ""' "$OPTIONS" | xargs)"
+
+case "$INSTANCE" in
+  "")
+    SHARED_BASE="/share/talon"
+    ;;
+  *[!A-Za-z0-9._-]*|.*|*..*)
+    echo "[talon] Invalid instance name: '$INSTANCE'"
+    echo "[talon] Use only letters, numbers, dot, underscore and dash; '..' is not allowed."
+    exit 1
+    ;;
+  *)
+    SHARED_BASE="/share/talon-instances/$INSTANCE"
+    ;;
+esac
+
+CONFIG_FILE="$SHARED_BASE/talond.yaml"
+PERSONA_DIR="$SHARED_BASE/personas/assistant"
+
+mkdir -p "$STATE_DIR" "$SHARED_BASE/skills" "$SHARED_BASE/personas" "$SHARED_BASE/subagents" "$SHARED_BASE/userdata" "$SHARED_BASE/data/ipc/daemon"
 
 OPENAI_API_KEY="$(jq -r '.openai_api_key // ""' "$OPTIONS")"
 OPENAI_MODEL="$(jq -r '.openai_model // "gpt-5.4"' "$OPTIONS")"
@@ -27,14 +43,17 @@ fi
 
 export OPENAI_API_KEY
 export TELEGRAM_BOT_TOKEN
+export TALON_INSTANCE="$INSTANCE"
+export TALON_WORKSPACE="$SHARED_BASE"
 export TALOND_CONFIG_PATH="$CONFIG_FILE"
 
 MODEL_JSON="$(printf '%s' "$OPENAI_MODEL" | jq -Rs .)"
 CHAT_ID_JSON="$(printf '%s' "$TELEGRAM_CHAT_ID" | jq -Rs .)"
 
-# One-time migration from the pre-0.4 private add-on layout.
-if [ ! -f "$CONFIG_FILE" ] && [ -f "$LEGACY_BASE/config/talond.yaml" ]; then
-  echo "[talon] Migrating Talon configuration to shared upstream-style workspace: $SHARED_BASE"
+# Only the default instance migrates the pre-0.4 private layout.
+# Named instances always start with their own isolated workspace.
+if [ -z "$INSTANCE" ] && [ ! -f "$CONFIG_FILE" ] && [ -f "$LEGACY_BASE/config/talond.yaml" ]; then
+  echo "[talon] Migrating legacy Talon configuration to $SHARED_BASE"
   cp "$LEGACY_BASE/config/talond.yaml" "$CONFIG_FILE"
 
   for dir in personas skills subagents userdata; do
@@ -44,20 +63,18 @@ if [ ! -f "$CONFIG_FILE" ] && [ -f "$LEGACY_BASE/config/talond.yaml" ]; then
   done
 
   sed -i \
-    -e 's#/data/talon/personas#/share/talon/personas#g' \
-    -e 's#/data/talon/skills#/share/talon/skills#g' \
-    -e 's#/data/talon/subagents#/share/talon/subagents#g' \
-    -e 's#/data/talon/userdata#/share/talon/userdata#g' \
-    -e 's#/data/talon/state/ipc/daemon#/share/talon/data/ipc/daemon#g' \
+    -e "s#/data/talon/personas#$SHARED_BASE/personas#g" \
+    -e "s#/data/talon/skills#$SHARED_BASE/skills#g" \
+    -e "s#/data/talon/subagents#$SHARED_BASE/subagents#g" \
+    -e "s#/data/talon/userdata#$SHARED_BASE/userdata#g" \
+    -e "s#/data/talon/state/ipc/daemon#$SHARED_BASE/data/ipc/daemon#g" \
     "$CONFIG_FILE"
 
-  # Replace bootstrap secrets copied from the old private config with
-  # environment placeholders before the config lives under /share.
   sed -i \
     -e 's#^[[:space:]]*botToken:.*#      botToken: ${TELEGRAM_BOT_TOKEN}#' \
     -e 's#^[[:space:]]*apiKey:.*#      apiKey: ${OPENAI_API_KEY}#' \
     "$CONFIG_FILE"
-  echo "[talon] Migration complete. Legacy /data/talon configuration was left intact as a fallback copy."
+  echo "[talon] Migration complete. Legacy /data/talon configuration was left intact."
 fi
 
 mkdir -p "$PERSONA_DIR"
@@ -69,9 +86,8 @@ Use configured MCP tools only when they are available and appropriate.
 EOF
 fi
 
-# Fresh install: bootstrap once from Home Assistant options.
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo "[talon] No Talon config found; bootstrapping $CONFIG_FILE from Home Assistant options."
+  echo "[talon] No config found for instance ${INSTANCE:-default}; bootstrapping $CONFIG_FILE."
   cat > "$CONFIG_FILE" <<EOF
 storage:
   type: sqlite
@@ -103,7 +119,7 @@ personas:
   - name: assistant
     model: $MODEL_JSON
     provider: openai-compatible
-    systemPromptFile: /share/talon/personas/assistant/system.md
+    systemPromptFile: $SHARED_BASE/personas/assistant/system.md
     skills: []
     subagents: []
     capabilities:
@@ -132,7 +148,7 @@ EOF
 
 ipc:
   pollIntervalMs: 500
-  daemonSocketDir: /share/talon/data/ipc/daemon
+  daemonSocketDir: $SHARED_BASE/data/ipc/daemon
 
 queue:
   maxAttempts: 3
@@ -191,5 +207,7 @@ fi
 
 cd "$SHARED_BASE"
 export PATH="/opt/talond/node_modules/.bin:$PATH"
+echo "[talon] Instance: ${INSTANCE:-default}"
+echo "[talon] Workspace: $SHARED_BASE"
 echo "[talon] Starting Talon Home Assistant add-on..."
 exec /usr/bin/tini -- node /opt/talond/dist/index.js --config "$CONFIG_FILE"

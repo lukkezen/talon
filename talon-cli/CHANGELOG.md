@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- Forward-fix after the failed 0.3.0/0.3.1 app-config migration.
+- Restores the last known-good CLI mapping with only `share:rw`.
+- Removes `all_app_configs` and `/app_configs` discovery logic.
+- Uses a version higher than 0.3.1 so Home Assistant can install this as a normal upgrade.
+
 ## 0.2.0
 
 - Adds optional `instance` configuration.

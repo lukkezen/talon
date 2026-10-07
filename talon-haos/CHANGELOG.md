@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0
+
+- Combines the Talon daemon and management CLI in one Home Assistant app.
+- Adds an Ingress terminal with upstream `talonctl`.
+- Moves the active workspace to private `/data/talon/workspaces/<instance>`.
+- Migrates the existing `/share/talon*` workspace once using a temporary read-only `/share` mount.
+- Leaves the legacy workspace untouched as a fallback.
+- Prepares 0.7.1, which will remove `/share` completely after migration.
+- Does not modify upstream Talon.
+
 ## 0.6.1
 
 - Forward-fix after the failed 0.6.0 app-config migration.

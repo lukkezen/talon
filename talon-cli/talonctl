@@ -1,8 +1,41 @@
 #!/bin/sh
 set -eu
 
-cd /share/talon
-export TALOND_CONFIG_PATH=/share/talon/talond.yaml
+OPTIONS="/data/options.json"
+
+if [ -n "${TALON_WORKSPACE:-}" ]; then
+  WORKSPACE="$TALON_WORKSPACE"
+else
+  INSTANCE=""
+  if [ -f "$OPTIONS" ]; then
+    INSTANCE="$(node -e '
+      const fs = require("fs");
+      try {
+        const o = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        process.stdout.write(String(o.instance ?? "").trim());
+      } catch {
+        process.stdout.write("");
+      }
+    ' "$OPTIONS")"
+  fi
+
+  case "$INSTANCE" in
+    "")
+      WORKSPACE="/share/talon"
+      ;;
+    *[!A-Za-z0-9._-]*|.*|*..*)
+      echo "Invalid Talon CLI instance name: '$INSTANCE'" >&2
+      exit 1
+      ;;
+    *)
+      WORKSPACE="/share/talon-instances/$INSTANCE"
+      ;;
+  esac
+fi
+
+cd "$WORKSPACE"
+export TALON_WORKSPACE="$WORKSPACE"
+export TALOND_CONFIG_PATH="$WORKSPACE/talond.yaml"
 
 # The shared config intentionally contains environment placeholders instead
 # of real Home Assistant secrets. Harmless placeholders let config-oriented

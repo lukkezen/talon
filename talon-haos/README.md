@@ -1,19 +1,15 @@
 # Talon Home Assistant add-on
 
-This folder packages [Talon](https://github.com/ivo-toby/talon) as a Home Assistant OS add-on without modifying Talon's application source.
+This wrapper runs the unmodified upstream Talon image on Home Assistant OS.
 
-## Current scope
+## Instance-aware workspace
 
-- uses the upstream `ghcr.io/ivo-toby/talond:latest` image
-- amd64, intended for the Intel NUC running Home Assistant OS
-- OpenAI-compatible provider using the OpenAI API
-- optional Telegram channel
-- upstream-style shared workspace at `/share/talon`
-- private SQLite/runtime state under `/data/talon/state`
-- compatible with the separate **Talon CLI** add-on in this repository
-- no Docker socket
-- no bundled Codex runner
+The optional Home Assistant setting `instance` selects the workspace:
 
-Home Assistant options bootstrap a fresh install. Afterwards, `/share/talon/talond.yaml` and the normal Talon skill/persona files are authoritative.
+- empty: `/share/talon`
+- `d66`: `/share/talon-instances/d66`
+- `group`: `/share/talon-instances/group`
 
-See `DOCS.md` for installation and migration details.
+Use the same instance value in the Talon CLI add-on. This lets the same wrapper code be reused for multiple isolated Home Assistant add-on installations without changing upstream Talon.
+
+Named instances bootstrap independently and never copy the default Talon workspace.

@@ -74,7 +74,7 @@ EOF
     name: personal-telegram
     enabled: true
     config:
-      botToken: ${TELEGRAM_BOT_TOKEN}
+      botToken: \${TELEGRAM_BOT_TOKEN}
       allowedChatIds:
         - $CHAT_ID_JSON
       pollingTimeoutSec: 30
@@ -166,7 +166,7 @@ auth:
   mode: api_key
   providers:
     openai:
-      apiKey: ${OPENAI_API_KEY}
+      apiKey: \${OPENAI_API_KEY}
       baseURL: https://api.openai.com/v1
 
 logLevel: info

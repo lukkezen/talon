@@ -12,6 +12,6 @@ The add-on intentionally keeps the Talon application itself upstream-compatible.
 - optional Telegram channel
 - no Docker sandbox inside Talon
 - no bundled Codex runner
-- MCP servers can be added in a later iteration
+- persistent upstream-style `talond.yaml`: Home Assistant options bootstrap it once, then Talon configuration is no longer regenerated\n- skills and MCP definitions remain under persistent `/data/talon/skills` and can be managed with the upstream Talon CLI
 
 See `DOCS.md` for installation and configuration.

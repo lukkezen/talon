@@ -1,0 +1,22 @@
+name: PR 290 Review Validation
+on:
+  push:
+    branches: [test/pr-290-review-fixes]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx vitest run tests/unit/tools/host-tools/channel-send.test.ts
+      - run: npx eslint src/tools/host-tools/channel-send.ts
+      - name: Full suite
+        run: npm test

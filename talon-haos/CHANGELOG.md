@@ -1,3 +1,9 @@
+## 0.8.2
+
+- Packages the fork-only OpenAI Responses MCP tool input-schema fix from commit 83a05ec.
+- Preserves required file-export arguments and nested channel attachment schemas.
+- Keeps the upstream image pinned and preserves existing private HA configuration.
+
 # Changelog
 
 ## 0.8.1

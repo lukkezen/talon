@@ -897,7 +897,2123 @@ The client provides:
 
 ## Multi-Connector Setup
 
-You can run N connector instances of the same channel type — for example, …31255 tokens truncated…     # Atomic file write
+You can run N connector instances of the same channel type — for example, multiple Slack bots — each with its own credentials and default persona binding. Channels are identified by `name` (unique), not by `type`.
+
+### Use cases
+
+- **Virtual team** — deploy per-persona bots in a single Slack workspace: PM-bot, Dev-bot, Content-bot, each responding in character.
+- **Per-persona Telegram bots** — multiple bots in a shared group, each bound to a different persona.
+
+### Configuration
+
+Add multiple entries of the same `type` under `channels:`, give each a unique `name`, and create a `bindings:` entry for each:
+
+```yaml
+channels:
+  - name: slack-pm
+    type: slack
+    enabled: true
+    config:
+      botToken: ${SLACK_PM_BOT_TOKEN}
+      appToken: ${SLACK_PM_APP_TOKEN}
+      signingSecret: ${SLACK_PM_SIGNING_SECRET}
+
+  - name: slack-dev
+    type: slack
+    enabled: true
+    config:
+      botToken: ${SLACK_DEV_BOT_TOKEN}
+      appToken: ${SLACK_DEV_APP_TOKEN}
+      signingSecret: ${SLACK_DEV_SIGNING_SECRET}
+
+bindings:
+  - persona: product-manager
+    channel: slack-pm
+    isDefault: true
+  - persona: developer
+    channel: slack-dev
+    isDefault: true
+```
+
+### Bot-self filtering
+
+Connectors automatically filter inbound messages from all bot accounts to prevent feedback loops — no configuration needed:
+
+- **Slack** — drops all messages with a `bot_id` field.
+- **Discord** — drops all messages from `author.bot` accounts.
+- **Telegram** — drops all messages where `from.is_bot` is true.
+- **WhatsApp Baileys** — filters via JID-based self-detection.
+
+WhatsApp Business (Cloud API) does not implement bot-self filtering; avoid running multiple Talon bots that share the same WhatsApp Business account.
+
+### Channel routing
+
+The `channel_send` tool routes by channel `name`, so a persona bound to `slack-pm` posts through the PM bot identity and a persona bound to `slack-dev` posts through the Dev bot identity.
+
+### WhatsApp note
+
+If you run multiple WhatsApp Business connectors with inbound webhooks, each must use a unique `webhookPort`.
+
+---
+
+## Personas
+
+A persona defines an AI agent's identity, capabilities, and channel bindings. Bindings are managed separately via `talonctl bind`.
+
+```yaml
+personas:
+  - name: alfred
+    description: Personal assistant
+    model: claude-sonnet-4-6
+    provider: claude-code
+    # Optional for Codex CLI and OpenAI-compatible Responses personas.
+    # OpenAI Responses: none, minimal, low, medium, high, xhigh, max, ultra.
+    # Codex CLI: minimal, low, medium, high, xhigh, max, ultra.
+    # reasoningEffort: medium
+    systemPromptFile: personas/alfred/system.md
+    skills:
+      - web-search
+      - calendar
+    capabilities:
+      allow:
+        - channel.send:telegram
+        - channel.send:slack
+        - net.http
+        - schedule.manage
+        - memory.access
+        - db.query:own
+
+bindings:
+  - persona: alfred
+    channel: my-telegram
+    isDefault: true
+  - persona: alfred
+    channel: my-slack
+    isDefault: true
+```
+
+`reasoningEffort` is a persona-level knob for Codex CLI and OpenAI-compatible Responses providers. Talon rejects it at config load for unsupported providers, values unsupported by the persona's provider, and OpenAI-compatible chat-completions mode. Codex CLI accepts `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`; omit the field to use the provider default because Codex CLI does not support `none`. OpenAI-compatible Responses additionally accepts `none`. Use the base model name in `model`; Talon does not support model-name suffix aliases for effort levels.
+
+### Persona templates
+
+Default system prompt templates live in `templates/<name>/system.md` and are safe to commit. The `personas/` directory is gitignored — personal prompts stay local.
+
+When creating a persona, `add-persona` checks `templates/<name>/system.md` first. If a named template exists it is copied to `personas/<name>/system.md`; otherwise a generic starter prompt is generated. Existing files are never overwritten — your customisations are safe.
+
+### Capability Labels
+
+Tools are gated by scoped capability labels. Anything not listed in a persona's
+capability configuration is denied by default. Today, tools listed in either
+`allow` or `requireApproval` are exposed to the provider runtime. The latter
+field is reserved for bridge-level approval enforcement; it does not currently
+prompt a user or block execution.
+
+| Capability               | Description                                                                 |
+| ------------------------ | --------------------------------------------------------------------------- |
+| `channel.send:<channel>` | Send messages to a specific channel                                         |
+| `persona.send:*`         | Delegate to another persona, list personas, and fetch delegated task status |
+| `schedule.manage`        | Create/modify/delete scheduled tasks                                        |
+| `memory.access`          | Read/write per-thread structured memory                                     |
+| `net.http`               | Fetch external URLs                                                         |
+| `db.query`               | Execute read-only database queries                                          |
+| `subagent.invoke`        | Invoke sub-agents for delegated tasks                                       |
+| `subagent.background`    | Launch and manage background workers                                        |
+| `execution.env`          | Manage sandboxed Sprite execution environments                              |
+
+### Capability Resolution
+
+When an agent requests a tool:
+
+```mermaid
+flowchart LR
+    A[Tool request] --> B{In persona's<br/>capability configuration?}
+    B -->|not listed| C[Reject]
+    B -->|allow or requireApproval| D[Expose tool to provider runtime]
+```
+
+---
+
+## Skills
+
+Skills are modular bundles of prompts, tools, and configuration that snap onto personas. Skills use **lazy loading** — only metadata (name + description) is injected into the system prompt. Full instructions are loaded on demand when the agent calls the `skill_load` tool.
+
+### Skill Formats
+
+Two on-disk formats are supported:
+
+**SKILL.md** (recommended) — single file with YAML frontmatter:
+
+```
+skills/<skill_name>/
+  SKILL.md             # YAML frontmatter + markdown instructions
+  mcp/*.json           # MCP server definitions (optional)
+  tools/*.yaml         # tool manifests (optional)
+  migrations/*.sql     # DB migrations (optional)
+```
+
+**skill.yaml + prompts/** (legacy) — separate manifest and prompt files:
+
+```
+skills/<skill_name>/
+  skill.yaml           # metadata, required capabilities
+  prompts/*.md         # prompt instruction fragments
+  mcp/*.json           # MCP server definitions (optional)
+  tools/*.yaml         # tool manifests (optional)
+  migrations/*.sql     # DB migrations (optional)
+```
+
+### Adding a Skill
+
+```bash
+# SKILL.md format (recommended)
+npx talonctl add-skill --name web-search --persona assistant --format skillmd
+
+# Legacy YAML format
+npx talonctl add-skill --name web-search --persona assistant
+```
+
+### Lazy Loading
+
+Only skill name and description are included in the agent's system prompt per run. When the agent needs a skill's full instructions, it calls `skill_load`. MCP servers from skills still connect eagerly at startup.
+
+| Scenario           | Eager (old) | Lazy (current) |
+| ------------------ | ----------- | -------------- |
+| 7 skills, using 1  | ~21k tokens | ~3.7k tokens   |
+| 20 skills, using 0 | ~60k tokens | ~2k tokens     |
+
+Background agents use eager loading to ensure full access without calling `skill_load`.
+
+#### Per-skill eager opt-in
+
+Some skills describe reflexive behaviors (e.g. "search memory before answering") that smaller models miss when only the description is available. Mark such a skill `eager: true` in its `SKILL.md` frontmatter (or `skill.yaml`) and its full body is merged into the persona system prompt at startup — the rest of the persona's skills stay lazy.
+
+```yaml
+---
+name: my-skill
+description: Use when …
+eager: true
+---
+```
+
+Defaults to `false`. Useful when a persona runs on a model that doesn't reliably autonomously call `skill_load` for indirect triggers (most open-weight ≤70B-effective models).
+
+The Talon + Postgram starter stack includes an eager `postgram-memory` skill. Its search guidance treats compact Postgram hits as matched chunks: before answering factual status, policy, completion, or verification questions from memory, the agent recalls the relevant full entities by ID and reports when the answer cannot be confirmed. See [`starter-stack/README.md`](starter-stack/README.md#how-the-agent-uses-postgram).
+
+### Skill Resolution
+
+Persona capabilities and skill requirements are intersected at runtime:
+
+```
+granted = persona.capabilities ∩ skill.requiredCapabilities
+```
+
+Skills with unmet capabilities produce a warning at startup and are skipped.
+
+### HTTP MCP Servers and OAuth
+
+For HTTP / SSE MCP servers that require OAuth (e.g. Glean, GitHub Enterprise),
+Talon owns the token lifecycle directly — no `mcp-remote` or other stdio
+bridge process at runtime. The auth flow supports Dynamic Client Registration
+or a pre-registered OAuth client whose credentials are referenced from the
+daemon environment.
+
+The interactive OAuth dance lives in `talonctl auth-mcp`, runs once per
+server, and writes a refreshable token bundle into Talon's data dir. The
+daemon reads + refreshes that bundle on every agent run and injects the
+resulting `Authorization: Bearer <token>` header into the MCP server config
+before the provider sees it. Providers never receive the OAuth cache or client
+credentials; Talon applies a native-tool restriction for runs that use an
+OAuth-authenticated MCP server.
+
+**Add an OAuth-protected server:**
+
+```bash
+talonctl add-mcp --skill work-search --name glean --transport http \
+  --url https://search.example.com/mcp --auth oauth2
+```
+
+By default, `talonctl auth-mcp` uses Dynamic Client Registration when the
+authorization server advertises it. For a pre-registered client, set the
+client credential variable names (not their values) when adding the server:
+
+```bash
+talonctl add-mcp --skill work-search --name enterprise-search --transport http \
+  --url https://search.example.com/mcp --auth oauth2 \
+  --scopes search:read \
+  --client-id-env SEARCH_OAUTH_CLIENT_ID \
+  --authorization-server-issuer https://identity.example.com \
+  --client-secret-env SEARCH_OAUTH_CLIENT_SECRET \
+  --token-endpoint-auth-method client_secret_basic
+```
+
+`client_secret_post` is also supported. With a client secret, the default is
+`client_secret_basic`; if no secret is needed, omit `--client-secret-env` and
+the client defaults to the public `none` method. Put
+the actual values in `.env`, which Docker Compose injects into the daemon.
+Talon requests no OAuth scopes by default; use `--scopes <scope...>` to ask
+only for the scopes this persona needs, rather than automatically requesting
+every scope advertised by the provider.
+Register `http://127.0.0.1:8788/callback` as an allowed redirect URI for a
+pre-registered client (and use the matching port if you change it).
+If the MCP resource URL or configured scopes change, rerun `auth-mcp`; Talon
+rejects a cached token bundle whose authorization context no longer matches.
+Talon expands `${ENV_VAR}` references in MCP headers and stdio environment
+values once. If the resulting value still contains provider-expandable
+environment syntax (for example `$VAR` or `${VAR}`), Talon fails closed before
+provider startup because some provider CLIs expand those references in their
+MCP configuration.
+
+For an MCP server using a static API token instead, use an environment
+placeholder in an HTTP header or stdio environment value. Quote the argument
+so your shell does not expand it before Talon writes the skill definition:
+
+```bash
+talonctl add-mcp --skill work-search --name internal-search --transport http \
+  --url https://search.example.com/mcp \
+  --headers 'Authorization=Bearer ${SEARCH_API_TOKEN}'
+```
+
+`talonctl env-check` reports missing variables referenced by `talond.yaml` and
+by MCP server definitions under `skills/*/mcp/*.json`. It reports names and
+status only, never values.
+
+**Skill config shape:**
+
+```json
+{
+  "name": "glean",
+  "config": {
+    "name": "glean",
+    "transport": "http",
+    "url": "https://contentful-be.glean.com/mcp/default",
+  "auth": {
+    "kind": "oauth2",
+    "clientIdEnv": "SEARCH_OAUTH_CLIENT_ID",
+    "clientSecretEnv": "SEARCH_OAUTH_CLIENT_SECRET",
+    "authorizationServerIssuer": "https://identity.example.com",
+    "tokenEndpointAuthMethod": "client_secret_basic"
+    }
+  }
+}
+```
+
+The skill loader stamps `auth.tokenStore: "<skillName>/<serverName>"` when
+omitted. Token bundles live at `<dataDir>/mcp-auth/<tokenStore>.json` (mode
+0600, atomic temp+rename writes).
+
+**One-time authorisation:**
+
+```bash
+# Native install (operator's desktop — opens local browser)
+talonctl auth-mcp work-search:glean
+
+# Docker starter on the same desktop: open the printed URL in the host browser
+talonctl auth-mcp work-search:glean --docker
+
+# Remote native daemon (operator connects over SSH)
+talonctl auth-mcp work-search:glean --headless
+# Prints the auth URL plus an `ssh -L <port>:localhost:<port> server`
+# command. Run the SSH forward from your local machine, then open the URL
+# in your local browser — the callback comes back over the forward.
+```
+
+The Docker starter publishes the callback on host loopback only
+(`127.0.0.1:8788`). `--docker` listens on the container interface only while
+the one-time authorization command is running; it does not expose the callback
+to the LAN. If you change `--port`, change the Compose port mapping to match.
+
+OAuth MCP resource URLs must use HTTPS. The command performs Dynamic Client
+Registration (RFC 7591) when configured without a client id, generates a PKCE
+challenge, runs the standard authorisation-code flow, and persists the
+resulting access + refresh tokens.
+For pre-registered clients, `authorizationServerIssuer` is required and pins
+metadata discovery to the configured HTTPS issuer; pre-registered credentials
+use environment-variable references and the client secret is not copied into
+the token bundle. DCR-issued token
+bundles are stored under `<dataDir>/mcp-auth/` with mode `0600`; the daemon
+picks up a new bundle on the next agent run, with no restart required.
+
+When a persona uses an OAuth-authenticated HTTP/SSE MCP server, Talon disables
+the provider's native shell and filesystem tools. Provider web search/fetch,
+Talon's capability-gated host tools, and configured MCP servers remain
+available. Codex CLI cannot disable its native tools, so those runs fail closed
+with a provider-switch message. This limits model-visible tool access; it is
+not OS-level isolation from another process running as the daemon's Unix user.
+
+**Refresh:** the daemon automatically refreshes access tokens that fall
+within 60 s of expiry, using the cached `refresh_token` and the OAuth
+provider's `token_endpoint`. If both access and refresh have expired,
+agent runs fail loudly with a "re-run `talonctl auth-mcp`" message.
+
+---
+
+## Sub-Agents
+
+### Why Sub-Agents?
+
+The main agent (Claude Sonnet) is powerful but expensive. Many tasks it performs are mechanical — searching files, retrieving memories, grooming stale data, summarizing transcripts. These don't need Sonnet-level reasoning; a cheaper model like Haiku can handle them in a fraction of the cost and time.
+
+Sub-agents solve this by offloading specific, well-scoped tasks to cheap models. The main agent stays focused on conversation and decision-making, while sub-agents handle the grunt work and return structured results. This keeps per-message costs low without sacrificing capability.
+
+### How Sub-Agents Work
+
+1. The main agent calls `subagent_invoke` via MCP, specifying a sub-agent name and input
+2. The daemon validates that the persona is assigned this sub-agent and has the required capabilities
+3. The **ModelResolver** creates an AI SDK model instance for the configured API provider or an isolated direct CLI adapter for an enabled subscription provider
+4. The sub-agent's `run()` function executes with a system prompt, model, and injected services
+5. Results flow back to the main agent as structured data
+
+### Model Overrides and Failover
+
+By default, each sub-agent uses the model declared in its `subagent.yaml` manifest. Operators can override this in `talond.yaml` without editing manifests, and configure an ordered failover chain so if the primary model is unavailable, the next is tried automatically.
+
+```yaml
+subagents:
+  memory-groomer:
+    model:
+      - provider: ollama
+        name: qwen3-30b
+        # maxTokens: 4096     # optional — falls back to subagent.yaml default
+        # timeoutMs: 120000   # optional per-model wall-clock timeout (min 1000)
+      - provider: anthropic
+        name: claude-haiku-4-5-20251001
+  session-summarizer:
+    model:
+      - provider: openai
+        name: gpt-5.4-spark
+```
+
+**Per-model fields:**
+
+| Field             | Purpose                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `provider`        | Provider slot: `anthropic`, `openai`, `google`, `ollama`, `claude-code`, or `codex-sandbox` (required)                    |
+| `name`            | Model name as the provider expects it (required)                                                                         |
+| `maxTokens`       | Max output tokens; falls back to the manifest value. Advisory for subscription-backed adapters                          |
+| `timeoutMs`       | Per-model wall-clock timeout. On expiry the runner aborts the in-flight AI SDK call and fails over to the next model     |
+| `providerOptions` | Free-form record forwarded to the AI SDK call. Use this for vendor-specific knobs (see `providerOptions` below)         |
+
+`anthropic`, `openai`, `google`, and `ollama` are AI SDK provider slots.
+`claude-code` is a direct, subscription-authenticated adapter available only to
+sub-agents after explicit opt-in under `subagentCli`. `codex-sandbox` is a
+subscription-authenticated adapter that calls a separately deployed Codex
+runner under `subagentSandbox`; neither uses the foreground/background
+`AgentProvider` registry. `codex-cli`, `gemini-cli`, and `openai-compatible`
+are not sub-agent model providers; use `ollama` for OpenAI-compatible
+sub-agent endpoints. Direct Codex CLI remains deliberately excluded because its
+agentic execution mode cannot enforce Talon's filesystem-read boundary.
+
+#### Subscription-backed sub-agents
+
+Use this for small, bounded sub-agent tasks when the daemon's OS user is already
+logged into Claude Code, or when a separately contained runner is logged into a
+dedicated Codex/ChatGPT account. Neither path uses `auth.providers` or an API
+key. The Claude child receives an explicit environment allowlist containing its
+normal Claude login paths and, for headless setups, `CLAUDE_CODE_OAUTH_TOKEN`.
+API-key and alternate API-routing environment variables are excluded before it
+starts.
+
+```yaml
+subagentCli:
+  claudeCode:
+    enabled: true
+    command: claude # optional path or command name
+
+subagentSandbox:
+  codex:
+    enabled: true
+    endpoint: http://codex-runner:9700 # use http://127.0.0.1:9700 for a native daemon
+    token: ${TALON_CODEX_RUNNER_TOKEN}
+    startupTimeoutMs: 30000 # wait for the supervised runner before accepting work
+
+subagents:
+  session-summarizer:
+    model:
+      - provider: claude-code
+        name: claude-sonnet-4-6
+        timeoutMs: 60000
+      - provider: codex-sandbox
+        name: gpt-5.6-terra
+        timeoutMs: 60000
+      - provider: anthropic # ordinary API fallback, if configured
+        name: claude-haiku-4-5-20251001
+```
+
+Each attempt is a single isolated generation, not an agent run: no Talon host
+tools, MCP servers, provider sessions, or persona tool access are exposed.
+Claude Code runs in safe mode with tools disabled and no session persistence.
+The configured `timeoutMs` aborts the whole CLI process group, waits briefly
+for cleanup, and then fails over. Claude Code does not provide a hard
+`maxTokens` limit. Codex uses a fresh App Server process, ephemeral thread, and
+empty temporary home/workspace per attempt. System instructions are passed in
+the App Server's trusted developer-instruction field, while the task remains a
+user message. It starts only with ChatGPT authentication; API-key and gateway
+authentication fail closed. The runner has no Talon host-tools bridge, MCP
+configuration, persona data, host mounts, or Docker socket. Any built-in Codex
+tool activity is interrupted and returned as a failed attempt, so the next
+model can take over.
+
+##### Codex runner deployment
+
+The runner is an optional, externally supervised sidecar, not a process inside
+`talond`. It is the required containment boundary on Linux and macOS (via
+Docker Desktop's Linux VM). Use a dedicated Codex/ChatGPT account: its runner
+login remains sensitive subscription state even though it is never exposed to
+Talon. When enabled, `talond` waits for the runner's authenticated `/readyz`
+endpoint before it starts channels, scheduling, or queue processing. It never
+starts Docker or Podman itself: granting the daemon container-runtime authority
+would defeat this containment boundary.
+
+For the Docker starter, add a random `TALON_CODEX_RUNNER_TOKEN` (at least 32
+characters) to `.env`, then start the optional profile and authenticate inside
+the isolated runner volume:
+
+```bash
+docker compose --profile codex-sandbox up -d
+docker compose exec -e CODEX_HOME=/auth -it codex-runner codex login
+docker compose exec -e CODEX_HOME=/auth codex-runner codex login status
+```
+
+This is a one-time deployment and login step. The Compose service uses
+`restart: unless-stopped`, so Docker restarts it automatically after host
+reboots; do **not** run `node dist/codex-runner/index.js` on the Talon host.
+The Compose service has no host port, no Talon volume, and no Docker socket.
+
+For a native Linux daemon managed by systemd, install the runner dependency
+alongside Talon. The runner remains a separate Docker container and systemd
+starts it before `talond` on every boot:
+
+```bash
+sudo ./deploy/install-service.sh --user talon --dir /home/talon/talon --codex-runner
+sudo systemctl start talon-codex-runner
+sudo docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.native-runner.yaml \
+  --profile codex-sandbox exec -e CODEX_HOME=/auth codex-runner codex login
+sudo systemctl start talond
+```
+
+Use `endpoint: http://127.0.0.1:9700` for that native setup. The interactive
+login is the only manual runner action; its Docker service and `talond` then
+start together after reboots. On macOS, create the same runner once with Docker
+or rootless Podman and `--restart unless-stopped`; configure Docker Desktop (or
+your container runtime) to start at login. The runner is published only on
+loopback for a native daemon:
+
+```bash
+docker build -f deploy/Dockerfile.codex-runner -t talon-codex-runner .
+docker volume create talon-codex-runner-auth
+docker run --rm -it -v talon-codex-runner-auth:/auth -e CODEX_HOME=/auth \
+  --entrypoint codex talon-codex-runner login
+docker run -d --name talon-codex-runner --restart unless-stopped \
+  --read-only --tmpfs /tmp:rw,noexec,nosuid,size=256m \
+  --cap-drop ALL --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges:true \
+  -p 127.0.0.1:9700:9700 -v talon-codex-runner-auth:/auth \
+  -e TALON_CODEX_RUNNER_TOKEN="$TALON_CODEX_RUNNER_TOKEN" talon-codex-runner
+```
+
+Authenticate Claude Code interactively as the same OS user that runs `talond`
+before enabling it. Restart the daemon after changing `subagentCli`,
+`subagentSandbox`, or a sub-agent model chain; hot reload does not rebuild the
+resolver and bound sub-agent runners. Plan/quota consumption and any
+subscription price are external to Talon, so sub-agent results may include token
+counts where the CLI supplies them but never invent a `costUsd` value.
+Authentication, quota, runner, or CLI failures are normal failover failures and
+try the next entry in the chain.
+
+**How failover works:**
+
+1. The runner tries each model in the `model` array in order
+2. If a model fails (missing credentials, provider down, runtime error), it logs a warning and tries the next
+3. On timeout, the runner aborts the in-flight call via `AbortController` and fails over — timeouts are not terminal
+4. After exhausting the override list, the manifest's `model` is tried as a final fallback
+5. If all models fail, the error includes a summary of each attempt and why it failed
+
+Overrides apply everywhere a sub-agent runs, including the context roller's summarizer path. Each attempt gets its own `timeoutMs` and `providerOptions` — settings do not leak across chain entries. `providerOptions` is ignored for subscription-backed entries.
+
+Sub-agents with no entry in `subagents:` use their manifest model unchanged. All per-model fields except `provider` and `name` are optional.
+
+#### `providerOptions` — vendor knob passthrough
+
+`providerOptions` is a free-form record of fields forwarded verbatim to the AI SDK call (`generateText` / `generateObject`). Use it to pass vendor-specific knobs like sampling parameters or custom chat template arguments.
+
+**Effective only on the `ollama` slot.** The `ollama` provider is Talon's OpenAI-compatible passthrough entry point — point it at any OpenAI-compatible endpoint (real Ollama, llama.cpp, vLLM, a Cloudflare-tunneled node) via `auth.providers.ollama.baseURL`. Typed providers (`anthropic`, `openai`, `google`) and subscription CLI providers silently drop unknown fields, so keep `providerOptions` on the `ollama` entry of your chain.
+
+**Example — route `session-summarizer` to Qwen3 on llama.cpp with thinking mode disabled, fall back to Claude:**
+
+```yaml
+auth:
+  providers:
+    ollama:
+      baseURL: http://localhost:8080/v1 # llama.cpp OpenAI-compatible endpoint
+
+subagents:
+  session-summarizer:
+    model:
+      - provider: ollama
+        name: Qwen3.5-35B-A3B-UD-Q4_K_XL
+        timeoutMs: 180000
+        maxTokens: 32768
+        providerOptions:
+          chat_template_kwargs:
+            enable_thinking: false
+      - provider: anthropic
+        name: claude-sonnet-4-6
+        timeoutMs: 60000
+        # no providerOptions on the fallback — Claude would drop them anyway
+```
+
+The runner wraps `providerOptions` under the active model entry's provider name internally (the user-facing YAML shape is flat). On failover to the Anthropic entry, `providerOptions` is not carried over — the Qwen-specific `chat_template_kwargs` never reaches Claude.
+
+**Built-in sub-agent names** (use these as keys under `subagents:` in `talond.yaml`):
+
+| Name                 | Default model               | Description                                                   |
+| -------------------- | --------------------------- | ------------------------------------------------------------- |
+| `file-searcher`      | `claude-haiku-4-5-20251001` | Search files by content, return ranked results with snippets  |
+| `memory-retriever`   | `claude-haiku-4-5-20251001` | Find relevant memories via keyword pre-filter + LLM rerank    |
+| `memory-groomer`     | `claude-haiku-4-5-20251001` | Prune stale, consolidate duplicate memory items               |
+| `session-summarizer` | `claude-sonnet-4-6`         | Compress transcripts for rolling context window (legacy)      |
+| `session-observer`   | `claude-sonnet-4-6`         | Generate dated, prioritized observations for long-term memory |
+| `session-reflector`  | `claude-sonnet-4-6`         | Consolidate observations when log grows too large             |
+| `spark-coder`        | `gpt-5.4-spark`             | Fast single-shot code generation (requires `OPENAI_API_KEY`)  |
+
+Sub-agents are loaded from three locations at startup (later overrides earlier):
+
+1. **Built-in** (`dist/subagents/default/`) — ships with the daemon
+2. **Project-level** (`cwd()/subagents/`) — custom agents in the project directory
+3. **Data directory** (`dataDir/subagents/`) — deployment-specific agents
+
+### Sub-Agent Structure
+
+```
+src/subagents/default/<agent_name>/    # built-in agents (compiled with daemon)
+  subagent.yaml          # manifest: model, capabilities, timeout
+  index.ts               # entry point: run(ctx, input) -> Result<SubAgentResult>
+  prompts/*.md           # system prompt fragments (concatenated in order)
+  lib/                   # optional helper modules
+```
+
+### Authoring Custom Sub-Agents
+
+The `run(ctx, input)` function receives a `SubAgentContext` from the runner. A custom sub-agent **must** forward the following context fields to any Vercel AI SDK `generateText` / `generateObject` call it makes:
+
+```typescript
+import { generateText } from 'ai';
+
+export async function run(ctx, input) {
+  const { text } = await generateText({
+    model: ctx.model,
+    system: ctx.systemPrompt,
+    prompt: '...',
+    maxOutputTokens: ctx.maxOutputTokens,
+    experimental_telemetry: ctx.telemetry,
+    abortSignal: ctx.abortSignal, // REQUIRED — see below
+    providerOptions: ctx.providerOptions, // REQUIRED — for ollama passthrough
+  });
+  // ...
+}
+```
+
+**`ctx.abortSignal` is a hard requirement, not a nice-to-have.** The runner creates an `AbortController` per model attempt and aborts it when the per-model `timeoutMs` fires. Sub-agents that do not forward `ctx.abortSignal` to their in-flight LLM calls will:
+
+1. Keep consuming the upstream provider's resources (tokens, rate limit quota, compute) after the runner has given up on that model
+2. Keep running in the background while failover already advances to the next model — producing overlapping, orphaned work
+3. Resolve later with a result that nothing is listening for, masking incidents
+
+All five built-in sub-agents forward both fields. Copy the pattern above when authoring new ones.
+
+**`ctx.providerOptions`** is only non-undefined when the active model entry is on the `ollama` provider slot (Talon's OpenAI-compatible passthrough). The runner wraps the user's override record under the provider name, and typed providers (`anthropic`, `openai`, `google`) receive `undefined` so they never see foreign body fields.
+
+### Built-in Sub-Agents
+
+#### `file-searcher`
+
+**Problem:** The main agent has no filesystem access outside its sandbox. When a user asks "find my notes about deployment," the agent would need to read every file itself — slow, expensive, and context-heavy.
+
+**Solution:** Uses a cascading search backend (`rg` → `grep` → Node.js `readdir`/`readFile`) to find matches by content, then optionally ranks results with an LLM when there are too many hits. Returns ranked file paths with relevant snippets.
+
+|                           |                                                                           |
+| ------------------------- | ------------------------------------------------------------------------- |
+| **Model**                 | Haiku 4.5                                                                 |
+| **Required capabilities** | `fs.read:*`                                                               |
+| **Timeout**               | 30s                                                                       |
+| **Input**                 | `{ query, rootPaths?, extensions?, maxFileSize?, maxResultsWithoutLlm? }` |
+| **Output**                | Ranked list of `{ path, snippet, relevance }`                             |
+
+The search cascade tries `rg --json` first (fastest, with `--ignore-case`, `--max-filesize`, context lines), falls back to `grep -rni` if rg isn't installed, and finally to a pure Node.js implementation as a last resort. If fewer than 20 matches are found, they're returned directly without LLM ranking.
+
+#### `memory-retriever`
+
+**Problem:** As threads accumulate memory items (facts, summaries, notes), finding the right ones for context becomes a search problem. Loading all memories into the main agent's context is wasteful when only a few are relevant.
+
+**Solution:** Reads all memory items for the current thread, applies a keyword pre-filter, then uses an LLM to rank the remaining candidates by relevance to the query. Returns the top-K results with relevance scores and reasoning.
+
+|                           |                                                           |
+| ------------------------- | --------------------------------------------------------- |
+| **Model**                 | Haiku 4.5                                                 |
+| **Required capabilities** | `memory.access:*`                                         |
+| **Timeout**               | 30s                                                       |
+| **Input**                 | `{ query, topK?, threshold? }`                            |
+| **Output**                | Ranked list of `{ id, type, content, relevance, reason }` |
+
+If fewer than 10 keyword matches are found, they're returned directly without LLM ranking. The LLM filters out items with relevance below 0.3.
+
+#### `memory-groomer`
+
+**Problem:** Memory items accumulate over time — duplicates, outdated facts, superseded summaries. Without grooming, context assembly pulls in stale data that confuses the main agent.
+
+**Solution:** Reads memory items for the current thread (optionally filtered by time window), sends them to an LLM that classifies each as `prune` (delete), `consolidate` (merge duplicates into one), or `keep`. Executes the recommended actions against the database. Consolidation inserts the merged entry before deleting sources to prevent data loss.
+
+|                           |                                                                 |
+| ------------------------- | --------------------------------------------------------------- |
+| **Model**                 | Haiku 4.5                                                       |
+| **Required capabilities** | `memory.access:*`                                               |
+| **Timeout**               | 30s                                                             |
+| **Input**                 | `{ periodMs? }` (optional: only groom items from the last N ms) |
+| **Output**                | `{ pruned, consolidated, kept }` counts                         |
+
+Uses `generateObject` with a Zod discriminated union schema to ensure the LLM returns valid, typed actions.
+
+#### `session-summarizer`
+
+**Problem:** Long conversations consume context window space. When the agent resumes a thread, it needs the key facts without replaying the entire transcript.
+
+**Solution:** Takes a raw conversation transcript and compresses it into a structured summary using `generateObject` with a Zod schema. Returns key facts (important decisions and information), open threads (unresolved topics), and a narrative summary.
+
+|                           |                                                                  |
+| ------------------------- | ---------------------------------------------------------------- |
+| **Model**                 | Haiku 4.5                                                        |
+| **Required capabilities** | none                                                             |
+| **Timeout**               | 30s                                                              |
+| **Input**                 | `{ transcript }`                                                 |
+| **Output**                | `{ keyFacts: string[], openThreads: string[], summary: string }` |
+
+This sub-agent is called automatically by the **rolling context window** (see below) — it is not invoked manually by the agent.
+
+#### `spark-coder`
+
+**Problem:** Code generation tasks inside agentic loops are bottlenecked by the main model's speed. The parent agent already knows what code to generate — it just needs a fast model to produce it.
+
+**Solution:** Uses OpenAI's `gpt-5.3-spark` for fast, single-shot code generation. Receives a task description, optional context files, and optional constraints, then returns structured file operations (create or replace) via `generateObject` with a Zod schema. The parent agent handles all filesystem I/O; this sub-agent is pure generation with no tool use or agentic loop.
+
+|                           |                                                       |
+| ------------------------- | ----------------------------------------------------- |
+| **Model**                 | GPT-5.3 Spark (OpenAI)                                |
+| **Required capabilities** | none                                                  |
+| **Requires env**          | `OPENAI_API_KEY`                                      |
+| **Timeout**               | 60s                                                   |
+| **Input**                 | `{ task, contextFiles?, constraints? }`               |
+| **Output**                | `{ files: [{ path, content, action }], explanation }` |
+
+This sub-agent is only loaded when `OPENAI_API_KEY` is set in the environment. Pairs well with the `execution_env` host tool for a generate → test → fix loop where the parent agent orchestrates between spark-coder (fast generation) and Sprites (sandboxed execution).
+
+### Rolling Context Window
+
+Long conversations eventually fill a provider's context window. Talon monitors provider-specific context metrics after each agent run and automatically rotates the session when the configured threshold is exceeded, keeping conversations seamless without jarring resets. For Claude latency optimization, `cache_total_input_tokens` is the strongest signal because it tracks the total cached session footprint after the run. For Codex, `cache_read_input_tokens` is the best latency-oriented signal because the CLI reports cached prompt reuse as `cached_input_tokens`, which Talon normalizes into `cache_read_input_tokens`.
+
+**How it works:**
+
+```
+Agent run completes → selected trigger metric exceeds threshold?
+  ├── No  → Continue normally (session resumes next time)
+  └── Yes → ContextRoller triggers:
+            1. Reconstruct transcript from messages table
+            2. Call session-summarizer (cheap model, ~30s)
+            3. Store summary as memory item (type: 'summary')
+            4. Clear session → next run starts fresh
+                               ↓
+            ContextAssembler injects into fresh session:
+            ┌─────────────────────────────────────────────────────┐
+            │ ## Prior-conversation state (read-only)             │
+            │ [Latest session summary / recent observations,      │
+            │  bounded by a char budget]                          │
+            │ ### Recent Messages                                 │
+            │ [Turns AFTER the most recent rotation, up to        │
+            │  recentMessageCount, tagged as                      │
+            │  "[previous turn, user]: ..."]                      │
+            └─────────────────────────────────────────────────────┘
+```
+
+**Key design decisions:**
+
+- **80K threshold** — leaves headroom for current turn I/O (~10-20K) within Sonnet's 200K window. Fresh sessions start at ~10-15K, giving ~70K of organic conversation before the next rotation.
+- **Summaries are memory items** — stored as `memory_items` with type `summary`, so they're subject to `memory-groomer` consolidation. Old summaries get merged/pruned automatically.
+- **Daemon-side, not agent-side** — the agent never knows its session was rotated. Context injection happens in the system prompt before the agent sees its first message.
+- **Awaited, not fire-and-forget** — rotation completes before the next queue item is processed, preventing race conditions.
+- **Prompt injection mitigation** — injected historical content is framed as "prior-conversation state" and replayed turns use bracketed state tags (`[previous turn, user]: …`) rather than `User:` / `Assistant:` role markers, so the main agent doesn't mistake historical context for live instructions. Recent Messages is scoped to turns AFTER the most recent rotation via `metadata.rotatedThroughTs`; pre-rotation turns are already compressed in the summary/observation.
+- **Bounded observation replay** — for the observational-memory path, the ContextAssembler replays observations up to a character budget (~20K) rather than concatenating the full log. This keeps prompt size flat over the thread's lifetime while preserving the newest state snapshot plus recent consolidated history.
+- **Durable completion state** — each observation persists `taskComplete` in metadata. When the observer flags the prior turn as complete, the assembler suppresses "Current task:" / "Next step:" hints so stale task pointers don't survive rotation and cause the agent to re-enter old work.
+
+**Files:** `src/daemon/context-roller.ts`, `src/daemon/context-assembler.ts`
+
+#### Observational memory (long-term context)
+
+The default `session-summarizer` produces a single summary blob that gets overwritten on each rotation — history beyond the last rotation is lost. For long-running conversations (e.g. Telegram threads spanning days), switch to **observational memory** by setting `summarizer: session-observer`.
+
+Instead of overwriting, observations **append** over time as a dated, prioritized decision log:
+
+```
+Date: 2026-04-07
+- 🔴 14:10 User wants to replace openai-compatible provider with Mastra Harness
+- 🔴 14:12 Decision: keep existing provider, add new mastra-code provider alongside
+- 🟡 14:15 LibSQL storage uses separate mastra.db to avoid WAL contention
+- 🟢 14:20 Background invocations not supported yet
+
+Date: 2026-04-07
+- 🔴 16:30 Implemented observational memory for context roller
+- 🟡 16:45 Reflector threshold set at 40K chars
+```
+
+When the observation log exceeds 40K characters, the `session-reflector` sub-agent consolidates — merging related observations, dropping superseded context, and preserving important decisions. This gives the agent long-term memory that survives many rotations. The reflector carries `taskComplete`, `currentTask`, `suggestedContinuation`, and the rotation-snapshot timestamp forward onto the consolidated row.
+
+Each observation also carries `taskComplete`, `currentTask`, and `suggestedContinuation` metadata. When `taskComplete` is true, hints are neither persisted nor surfaced — so the agent resumes only when there is genuinely unfinished work, and stale task pointers don't drift across rotations.
+
+**Priority levels:** 🔴 high (critical decisions, goals, deadlines) · 🟡 medium (questions, preferences, conditional info) · 🟢 low (ephemeral context, minor details)
+
+```yaml
+# 1. Set the provider's summarizer to session-observer
+contextManagement:
+  enabled: true
+  triggerMetric: input_tokens
+  thresholdRatio: 0.75
+  recentMessageCount: 10
+  summarizer: session-observer # enables observational memory
+  reflectionThresholdChars: 40000 # observation-log size that triggers session-reflector (default 40000)
+
+# 2. Add the observer and reflector to the persona's subagents list
+personas:
+  - name: assistant
+    subagents:
+      - session-observer # required for observational memory
+      - session-reflector # required for observation consolidation
+      - memory-groomer
+      - memory-retriever
+      - file-searcher
+```
+
+**Important:** Personas only load sub-agents explicitly listed in their `subagents` config. Without `session-observer` and `session-reflector` in the list, the context-roller won't find them at runtime. You can remove `session-summarizer` from personas using OM since it won't be called.
+
+For multi-step agent providers that expose both cumulative and final-step usage, Talon keeps cumulative usage for accounting and Langfuse, but gates context rotation on the final model step. Codex CLI provides this through its `token_count.last_token_usage` events; this prevents tool-heavy turns from rotating simply because cumulative billed input crossed the threshold.
+
+### Provider Support
+
+Sub-agents can use any supported AI provider. Configure API keys in `talond.yaml`:
+
+```yaml
+auth:
+  providers:
+    anthropic:
+      apiKey: ${SUBAGENT_ANTHROPIC_API_KEY}
+    openai:
+      apiKey: ${OPENAI_API_KEY}
+    google:
+      apiKey: ${GOOGLE_API_KEY}
+    ollama:
+      baseURL: http://localhost:11434/v1
+      # apiKey: ${OLLAMA_API_KEY}   # required for Ollama Cloud / authenticated endpoints
+```
+
+The `ollama` slot is Talon's OpenAI-compatible passthrough — use it for local Ollama, llama.cpp, vLLM, Ollama Cloud, or any OpenAI-compatible endpoint. `apiKey` is forwarded when set (required for authenticated endpoints) and falls back to a dummy value for local endpoints that either ignore auth or accept any token. Environment variable references like `${OLLAMA_API_KEY}` are substituted from the shell environment / `.env` file at config load.
+
+### Persona Configuration
+
+Personas must declare which sub-agents they can invoke and have the `subagent.invoke:*` capability:
+
+```yaml
+personas:
+  - name: assistant
+    model: claude-sonnet-4-6
+    subagents:
+      - session-summarizer
+      - memory-groomer
+      - memory-retriever
+      - file-searcher
+    capabilities:
+      allow:
+        - subagent.invoke:*
+        - memory.access:*
+        - fs.read:*
+```
+
+The agent also needs to know about its sub-agents in the system prompt. Add a section describing the available sub-agents and their input schemas so the agent knows when and how to use them.
+
+### Testing Sub-Agents
+
+Use `talonctl run-subagent` to test sub-agents without a running daemon:
+
+```bash
+# File search (no DB needed)
+npx talonctl run-subagent --name file-searcher --input '{"query": "deployment"}'
+
+# Session summarizer (no DB needed)
+npx talonctl run-subagent --name session-summarizer --input '{"transcript": "User: hello\nAssistant: hi"}'
+
+# memory-retriever and memory-groomer require a running daemon (they need DB access)
+```
+
+### Creating a Custom Sub-Agent
+
+1. Create a directory under `subagents/` (in cwd or dataDir) with a `subagent.yaml` manifest
+2. Write an `index.ts` (dev) or `index.js` (production) with an exported `run(ctx, input)` function returning `Result<SubAgentResult, SubAgentError>`
+3. Add prompt fragments in `prompts/` (numbered for ordering: `01-system.md`, `02-examples.md`)
+4. Declare required capabilities in the manifest — the daemon validates these against the persona at invocation time
+5. Optionally add `requiresEnv` to the manifest — the loader skips the sub-agent if any listed env vars are missing (useful for provider-specific API keys)
+6. Test with `talonctl run-subagent --name your-agent --input '{}'`
+
+Custom sub-agents override built-in ones if they share the same name (dataDir takes precedence over cwd, which takes precedence over built-in).
+
+---
+
+## CLI Reference
+
+`talonctl` is the management CLI for the daemon. All commands are available via `npx talonctl <command>`. Most commands accept `--config <path>` to point at a non-default `talond.yaml`.
+
+### Daemon Management
+
+| Command  | Description                                                   |
+| -------- | ------------------------------------------------------------- |
+| `status` | Show daemon health, active channels, queue depth, token usage |
+| `reload` | Hot-reload config without restarting the daemon               |
+| `chat`   | Connect to a persona via the terminal channel                 |
+
+**`status`** / **`reload`** options:
+
+| Option             | Description                              | Default     |
+| ------------------ | ---------------------------------------- | ----------- |
+| `--ipc-dir <path>` | IPC directory (overrides config default) | from config |
+| `--timeout <ms>`   | Response timeout in milliseconds         | `5000`      |
+
+**`chat`** options:
+
+| Option             | Description                                            | Default     |
+| ------------------ | ------------------------------------------------------ | ----------- |
+| `--host <host>`    | Terminal connector host                                | `127.0.0.1` |
+| `--port <port>`    | Terminal connector port                                | `7700`      |
+| `--token <token>`  | Authentication token (or set `TERMINAL_TOKEN` env var) | required    |
+| `--client-id <id>` | Client identity for persistent threads                 | —           |
+| `--persona <name>` | Persona to connect to (overrides channel default)      | —           |
+| `--tls`            | Use `wss://` (TLS) instead of `ws://`                  | off         |
+
+```bash
+npx talonctl status --timeout 5000
+npx talonctl reload
+npx talonctl chat --token mytoken --persona assistant
+```
+
+### Setup and Configuration
+
+| Command       | Description                                                                       |
+| ------------- | --------------------------------------------------------------------------------- |
+| `setup`       | First-time interactive setup (checks environment, creates dirs, generates config) |
+| `add-channel` | Add a channel connector to config                                                 |
+| `add-persona` | Scaffold a persona directory and add to config                                    |
+| `add-skill`   | Scaffold a skill and attach to a persona                                          |
+| `add-mcp`     | Add an MCP server to a skill                                                      |
+
+**`setup`** options:
+
+| Option              | Description               | Default       |
+| ------------------- | ------------------------- | ------------- |
+| `--config <path>`   | Path to write talond.yaml | `talond.yaml` |
+| `--data-dir <path>` | Data directory path       | `data`        |
+
+**`add-channel`** options:
+
+| Option            | Description                                                                                             | Default       |
+| ----------------- | ------------------------------------------------------------------------------------------------------- | ------------- |
+| `--name <name>`   | Unique channel name (required)                                                                          | —             |
+| `--type <type>`   | Connector type: telegram, slack, discord, whatsappBaileys, whatsappBusiness, email, terminal (required) | —             |
+| `--config <path>` | Path to talond.yaml                                                                                     | `talond.yaml` |
+
+**`add-persona`** options:
+
+| Option                        | Description                                                              | Default       |
+| ----------------------------- | ------------------------------------------------------------------------ | ------------- |
+| `--name <name>`               | Persona name (required)                                                  | —             |
+| `--model <model>`             | Model name                                                               | —             |
+| `--provider <provider>`       | Provider name                                                            | —             |
+| `--capabilities <caps>`       | Comma-separated capabilities allow list                                  | —             |
+| `--require-approval <caps>`   | Set the `requireApproval` capability list (not currently bridge-enforced) | —           |
+| `--skills <skills>`           | Comma-separated skill names                                              | —             |
+| `--system-prompt-file <path>` | Path to a system prompt markdown file                                    | —             |
+| `--description <text>`        | Short description (written to system.md frontmatter)                     | —             |
+| `--templates-dir <path>`      | Path to templates directory                                              | `templates`   |
+| `--config <path>`             | Path to talond.yaml                                                      | `talond.yaml` |
+
+**`add-skill`** options:
+
+| Option                | Description                               | Default       |
+| --------------------- | ----------------------------------------- | ------------- |
+| `--name <name>`       | Skill name (required)                     | —             |
+| `--persona <persona>` | Persona to attach the skill to (required) | —             |
+| `--format <format>`   | Skill format: `yaml` or `skillmd`         | `yaml`        |
+| `--config <path>`     | Path to talond.yaml                       | `talond.yaml` |
+
+**`add-mcp`** options:
+
+| Option                | Description                                          | Default  |
+| --------------------- | ---------------------------------------------------- | -------- |
+| `--skill <name>`      | Skill name (required)                                | —        |
+| `--name <name>`       | MCP server name (required)                           | —        |
+| `--transport <type>`  | Transport type: `stdio`, `sse`, or `http` (required) | —        |
+| `--command <cmd>`     | Command to run (required for stdio)                  | —        |
+| `--args <args...>`    | Command arguments (space-separated)                  | —        |
+| `--url <url>`         | Server URL (required for sse/http)                   | —        |
+| `--headers <pairs>`   | HTTP headers (`KEY=VALUE,...`); use `${ENV_VAR}` for secrets | — |
+| `--auth oauth2`       | Enable OAuth for an HTTP/SSE server                  | —        |
+| `--client-id-env`     | Environment variable with a pre-registered client id | —       |
+| `--client-secret-env` | Environment variable with its client secret          | —        |
+| `--authorization-server-issuer` | Pin the pre-registered client's HTTPS OAuth issuer | — |
+| `--scopes <scopes...>` | Explicit OAuth scopes to request; none by default | — |
+| `--token-endpoint-auth-method` | `none`, `client_secret_post`, or `client_secret_basic` | — |
+| `--timeout-ms <ms>`     | Per-MCP-request timeout in milliseconds (integer ≥ 1000, decimal digits only) | Mastra 60 000 ms (omitted) |
+| `--tool-output-cap <chars>` | Per-server cap in characters before an MCP tool result enters message history (integer ≥ 0, decimal digits only; `0` disables excerpting for that server) | provider `toolOutputCap` fallback (or 4000) |
+| `--env <pairs>`       | Stdio environment (`KEY=VALUE,...`); use `${ENV_VAR}` for secrets | — |
+| `--skills-dir <path>` | Skills directory                                     | `skills` |
+
+Both `--timeout-ms` and `--tool-output-cap` must be strict decimal digit
+strings representing safe integers (no signs, fractions, whitespace, or
+exponents); the CLI rejects invalid values before writing any file.
+
+```bash
+npx talonctl setup --config talond.yaml --data-dir data
+npx talonctl add-channel --name work-slack --type slack
+npx talonctl add-persona --name researcher --model claude-sonnet-4-6 --provider claude-code \
+  --capabilities "channel.send:slack,fs.read:*" --skills web-search
+npx talonctl add-skill --name web-search --persona researcher --format skillmd
+npx talonctl add-mcp --skill web-search --name tavily \
+  --transport stdio --command npx --args @anthropic-ai/mcp-web-search
+```
+
+### Channel and Persona Management
+
+| Command             | Description                                                            |
+| ------------------- | ---------------------------------------------------------------------- |
+| `list-channels`     | List all configured channels                                           |
+| `list-personas`     | List all configured personas                                           |
+| `list-skills`       | List all configured skills (optionally filter by persona)              |
+| `list-capabilities` | List all available capability labels for persona config                |
+| `set-capabilities`  | Set capability labels on a persona                                     |
+| `bind`              | Bind a persona to a channel (first binding becomes default)            |
+| `unbind`            | Remove a persona-channel binding                                       |
+| `remove-channel`    | Remove a channel and its bindings                                      |
+| `remove-persona`    | Remove a persona, its directory, and bindings                          |
+| `env-check`         | Audit Talon config and MCP definitions for missing env vars            |
+| `config-show`       | Display resolved config with secrets masked                            |
+
+`env-check` also accepts `--skills-dir <path>` (default `skills`). It reports
+variable names and set/missing status only; it never prints values.
+
+**`list-skills`** options:
+
+| Option             | Description                   | Default       |
+| ------------------ | ----------------------------- | ------------- |
+| `--persona <name>` | Filter skills by persona name | all           |
+| `--config <path>`  | Path to talond.yaml           | `talond.yaml` |
+
+**`set-capabilities`** options:
+
+| Option                        | Description                                                          | Default       |
+| ----------------------------- | -------------------------------------------------------------------- | ------------- |
+| `--persona <name>`            | Persona name (required)                                              | —             |
+| `--allow <labels>`            | Replace allow list (comma-separated)                                 | —             |
+| `--add <labels>`              | Add to allow list (comma-separated)                                  | —             |
+| `--remove <labels>`           | Remove from allow list (comma-separated)                             | —             |
+| `--require-approval <labels>` | Replace `requireApproval` list (not currently bridge-enforced)      | —             |
+| `--show`                      | Show current capabilities without modifying                          | —             |
+| `--config <path>`             | Path to talond.yaml                                                  | `talond.yaml` |
+
+**`config-show`** options:
+
+| Option            | Description                                | Default       |
+| ----------------- | ------------------------------------------ | ------------- |
+| `--show-secrets`  | Show secret values instead of masking them | off           |
+| `--config <path>` | Path to talond.yaml                        | `talond.yaml` |
+
+```bash
+npx talonctl list-channels
+npx talonctl list-personas
+npx talonctl list-skills --persona assistant
+npx talonctl list-capabilities
+npx talonctl set-capabilities --persona assistant --add "fs.write:workspace" --show
+npx talonctl bind --persona assistant --channel my-telegram
+npx talonctl unbind --persona assistant --channel old-slack
+npx talonctl remove-channel --name old-slack
+npx talonctl remove-persona --name old-bot
+npx talonctl env-check
+npx talonctl config-show --show-secrets
+```
+
+### Thread and Provider Affinity
+
+| Command                   | Description                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| `list-threads`            | List persisted threads for a channel, including external IDs and provider info |
+| `reset-provider-affinity` | Reset provider affinity for one channel thread                                 |
+
+**`list-threads`** options:
+
+| Option             | Description             | Default       |
+| ------------------ | ----------------------- | ------------- |
+| `--channel <name>` | Channel name (required) | —             |
+| `--config <path>`  | Path to talond.yaml     | `talond.yaml` |
+
+**`reset-provider-affinity`** options:
+
+| Option               | Description                                                           | Default       |
+| -------------------- | --------------------------------------------------------------------- | ------------- |
+| `--channel <name>`   | Channel name (required)                                               | —             |
+| `--external-id <id>` | Thread external ID (required). Use `list-threads` to discover values. | —             |
+| `--yes`              | Bypass the confirmation prompt                                        | off           |
+| `--config <path>`    | Path to talond.yaml                                                   | `talond.yaml` |
+
+Foreground conversations are sticky by default: once a thread has run on one provider, Talon keeps using that provider for subsequent messages on the same thread. This preserves session continuity for resumable providers like Claude Code and Codex CLI. Resumable sessions are restored only for the same provider, model, and configured `reasoningEffort`; changing the configured model or effort starts a fresh provider session so Talon can inject the compressed session-observer/session-summarizer context. `reset-provider-affinity` does not rewrite run history — it stores a reset marker on the thread, which also prevents older persisted sessions from being restored after the reset.
+
+The `external-id` value is connector-specific:
+
+- Telegram: the `chat_id`
+- Slack: `<channelId>:<thread_ts>` or just `<channelId>`
+- Terminal: the `clientId`
+- WhatsApp Business: the sender `wa_id`
+- Email: `<address>:<messageId>`
+
+```bash
+npx talonctl list-threads --channel my-telegram
+npx talonctl reset-provider-affinity --channel my-telegram --external-id 123456789
+npx talonctl reset-provider-affinity --channel my-telegram --external-id 123456789 --yes
+```
+
+### Provider Management
+
+| Command                | Description                                                        |
+| ---------------------- | ------------------------------------------------------------------ |
+| `list-providers`       | List all configured providers from agentRunner and backgroundAgent |
+| `add-provider`         | Add a provider to agentRunner, backgroundAgent, or both            |
+| `set-default-provider` | Switch the default provider for a context                          |
+| `test-provider`        | Test a provider by running a version check and minimal prompt      |
+
+**`add-provider`** options:
+
+| Option                       | Description                                                                      | Default              |
+| ---------------------------- | -------------------------------------------------------------------------------- | -------------------- |
+| `--name <name>`              | Provider name, e.g. `gemini-cli` (required)                                      | —                    |
+| `--type <type>`              | Provider implementation type when `--name` is an alias, e.g. `openai-compatible` | —                    |
+| `--command <cmd>`            | CLI binary path, e.g. `gemini` (required)                                        | —                    |
+| `--context <ctx>`            | Where to add: `agent-runner`, `background`, or `both`                            | `both`               |
+| `--context-window <tokens>`  | Context window size in tokens                                                    | `200000`             |
+| `--context-enabled <bool>`   | Enable context management (true/false)                                           | —                    |
+| `--trigger-metric <metric>`  | Context rotation trigger metric                                                  | —                    |
+| `--threshold-ratio <ratio>`  | Context rotation threshold (0-1)                                                 | `0.5`                |
+| `--recent-message-count <n>` | Recent messages to preserve in fresh sessions                                    | `10`                 |
+| `--summarizer <name>`        | Subagent name for session summarization                                          | `session-summarizer` |
+| `--enabled`                  | Enable the provider immediately                                                  | disabled             |
+| `--default-model <model>`    | Set `options.defaultModel`                                                       | —                    |
+| `--base-url <url>`           | Set `options.baseUrl` for OpenAI-compatible providers                            | —                    |
+| `--provider-id <id>`         | Set `options.providerId` for OpenAI-compatible credential lookup                 | —                    |
+| `--tool-output-cap <chars>`  | Set `options.toolOutputCap` for OpenAI-compatible providers                      | —                    |
+| `--api-mode <mode>`          | Set `options.apiMode` (`chat-completions` or `responses`)                        | —                    |
+| `--session-mode <mode>`      | Set `options.sessionMode` (`none` or `previous_response_id`)                     | —                    |
+| `--omlx-responses`           | Deprecated alias for `--api-mode responses --session-mode previous_response_id`  | off                  |
+| `--config <path>`            | Path to talond.yaml                                                              | `talond.yaml`        |
+
+**`set-default-provider`** options:
+
+| Option            | Description                                        | Default       |
+| ----------------- | -------------------------------------------------- | ------------- |
+| `--name <name>`   | Provider name to set as default (required)         | —             |
+| `--context <ctx>` | Context: `agent-runner` or `background` (required) | —             |
+| `--config <path>` | Path to talond.yaml                                | `talond.yaml` |
+
+**`test-provider`** options:
+
+| Option            | Description                             | Default        |
+| ----------------- | --------------------------------------- | -------------- |
+| `--name <name>`   | Provider name to test (required)        | —              |
+| `--context <ctx>` | Context: `agent-runner` or `background` | `agent-runner` |
+| `--config <path>` | Path to talond.yaml                     | `talond.yaml`  |
+
+```bash
+npx talonctl list-providers
+npx talonctl add-provider --name gemini-cli --command gemini \
+  --context-window 1000000 --default-model gemini-2.5-pro --enabled
+npx talonctl add-provider --name ollama-mac --type openai-compatible --command node \
+  --context both --context-window 128000 --default-model qwen3-coder:30b \
+  --base-url http://mac.local:11434/v1 --provider-id ollama-mac --enabled
+# For stateful oMLX-style /v1/responses endpoints, add:
+#   --api-mode responses --session-mode previous_response_id
+npx talonctl set-default-provider --name gemini-cli --context agent-runner
+npx talonctl test-provider --name gemini-cli
+```
+
+For `openai-compatible` (**experimental**), use the canonical provider name `openai-compatible` or add an alias with `type: openai-compatible` when you need multiple endpoints at once. Credentials are looked up under `auth.providers.<options.providerId>.{apiKey,baseURL}` (e.g. `auth.providers.ollama`, `auth.providers.ollama-mac`, `auth.providers.groq`), so the same slot can be reused by the matching sub-agent provider. If no entry matches `providerId`, the provider falls back to `auth.providers.openai-compatible.{apiKey,baseURL}`. The provider streams text deltas, tool calls, and tool results via a Mastra-backed wrapper CLI, so users see incremental responses and tool activity in the connected channel (no "Thinking..." placeholder).
+
+OpenAI-compatible entries may set a flat `options.providerOptions` record for vendor-specific request body knobs. Talon wraps it under `options.providerId` before calling Mastra, so disabling Qwen thinking on an `ollama-mac` alias is `providerOptions.chat_template_kwargs.enable_thinking: false`, not a nested `providerOptions.openai` block.
+
+For endpoints that expose OpenAI-compatible `/v1/responses`, set `agentRunner.providers.<name>.options.apiMode: responses` to use the Responses API instead of the default Mastra chat-completions path. If the endpoint also supports stateful `previous_response_id` chaining, set `options.sessionMode: previous_response_id` (or pass `talonctl add-provider --api-mode responses --session-mode previous_response_id`). In this mode Talon stores the returned response id as the provider session id and resumes later turns with `previous_response_id`, so stateful oMLX-style endpoints can reuse their response-state chain and prefix/KV cache across tool-call steps. Stored response ids are scoped by provider, model, and configured reasoning effort; if you test a different model or effort on the same provider, Talon starts a fresh session and injects the assembled prior-conversation state instead of resuming the old chain. Use `sessionMode: previous_response_id` only for foreground agent-runner endpoints that implement stateful `/v1/responses`; leave it off for background providers, Ollama, vLLM, Groq, Together, and ordinary OpenAI-compatible chat-completions servers. The old `options.omlxResponses: true` and `talonctl add-provider --omlx-responses` forms are still accepted as deprecated aliases for `apiMode: responses` plus `sessionMode: previous_response_id`.
+
+For OpenAI-compatible Responses requests, persona `reasoningEffort` is merged as `reasoning.effort` after provider options, so it wins over `options.providerOptions.reasoning.effort` while preserving other provider-level `reasoning` fields such as `summary`. In chat-completions mode, configuring `reasoningEffort` is rejected with a clear provider error because there is no deterministic cross-server chat-completions request shape for this field.
+
+> **Experimental provider.** `openai-compatible` uses a Mastra-backed wrapper with several workarounds for Mastra/AI-SDK gaps: fetch-level `stream_options` injection for usage reporting, a high `maxSteps` safety net to avoid Mastra's low default tool-call limit, and workspace tool output caps to prevent stalls from large directory listings. These workarounds may break with future Mastra versions. If you encounter issues, pin your `@mastra/core` version and report the problem.
+
+##### Prompt caching with `openai-compatible`
+
+The provider already reads `prompt_tokens_details.cached_tokens` from the upstream response (via Mastra / the AI SDK), maps it onto `cacheReadTokens` in the run's `AgentUsage`, and exposes all four cache metrics — `input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `cache_total_input_tokens` — to the context roller and Langfuse observations. That means you can set `contextManagement.triggerMetric: cache_read_input_tokens` the same way as for `claude-code` or `codex-cli`, and prompt-cache hits will show up in the dashboard.
+
+Whether you actually see non-zero cache counts depends entirely on the **upstream server**, not on Talon:
+
+| Endpoint                                                            | Emits cached token counts?                                                                                                                                     |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI (`api.openai.com/v1`)                                        | ✅ yes, automatic                                                                                                                                              |
+| DeepSeek (`api.deepseek.com/v1`)                                    | ✅ yes                                                                                                                                                         |
+| Zhipu GLM-4.5 / GLM-5 (`open.bigmodel.cn`)                          | ✅ yes (paid tier)                                                                                                                                             |
+| vLLM (`--enable-prefix-caching`)                                    | ✅ yes                                                                                                                                                         |
+| OpenRouter                                                          | depends on underlying model                                                                                                                                    |
+| **Ollama (self-hosted or Cloud)**                                   | ❌ no — KV-cache is internal, not surfaced in the OpenAI-compatible usage object                                                                               |
+| Groq / Together / Fireworks                                         | ❌ no                                                                                                                                                          |
+| **Stateful Responses API with `sessionMode: previous_response_id`** | ✅ yes when `/v1/responses` usage includes cached token details; even when usage omits them, `previous_response_id` still avoids Talon reinjecting prior turns |
+
+If your upstream does not emit `prompt_tokens_details`, `cache_read_input_tokens` will stay at 0 and `cache_creation_input_tokens` will equal `input_tokens` — that is the expected degradation, not a bug. Use `triggerMetric: input_tokens` for those endpoints.
+
+### MCP Authentication
+
+| Command                     | Description                                                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `auth-mcp <skill>:<server>` | One-time interactive OAuth flow for an HTTP MCP server. See [HTTP MCP Servers and OAuth](#http-mcp-servers-and-oauth). |
+
+**`auth-mcp`** options:
+
+| Option                | Description                                                                                                  | Default       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ | ------------- |
+| `--headless`          | Don't try to open a browser. Print the auth URL + suggested SSH forward command. Use this on remote daemons. | off           |
+| `--docker`            | Use the callback published on host loopback by the Docker starter; open the printed URL on the host.         | off           |
+| `--port <port>`       | Localhost callback port; custom ports must match the SSH forward or Compose mapping.                        | `8788`        |
+| `--config <path>`     | Path to talond.yaml                                                                                          | `talond.yaml` |
+| `--skills-dir <path>` | Path to the skills directory                                                                                 | `skills`      |
+
+### Scheduling
+
+| Command           | Description                           |
+| ----------------- | ------------------------------------- |
+| `add-schedule`    | Create a scheduled task for a persona |
+| `list-schedules`  | List all scheduled tasks              |
+| `remove-schedule` | Permanently delete a scheduled task   |
+
+**`add-schedule`** options:
+
+| Option                 | Description                                                                                                                                           | Default       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `--persona <name>`     | Persona name (required)                                                                                                                               | —             |
+| `--channel <name>`     | Channel to bind the schedule thread to (required)                                                                                                     | —             |
+| `--cron <expr>`        | Cron expression, 5-field (required)                                                                                                                   | —             |
+| `--label <label>`      | Human-readable label (required)                                                                                                                       | —             |
+| `--prompt <prompt>`    | Inline prompt text. Mutually exclusive with `--prompt-file`.                                                                                          | —             |
+| `--prompt-file <name>` | Prompt file basename (without `.md`) under `personas/<persona>/prompts/`. Resolved by the scheduler at fire time. Mutually exclusive with `--prompt`. | —             |
+| `--config <path>`      | Path to talond.yaml                                                                                                                                   | `talond.yaml` |
+
+Exactly one of `--prompt` or `--prompt-file` must be provided. `--prompt-file` is preferred for reusable, long-form prompts (e.g. `--prompt-file braintoss` resolves to `personas/<persona>/prompts/braintoss.md` at fire time).
+
+**`list-schedules`** options:
+
+| Option             | Description            | Default       |
+| ------------------ | ---------------------- | ------------- |
+| `--persona <name>` | Filter by persona name | all           |
+| `--config <path>`  | Path to talond.yaml    | `talond.yaml` |
+
+**`remove-schedule`** takes a positional `<schedule-id>` argument:
+
+| Option            | Description         | Default       |
+| ----------------- | ------------------- | ------------- |
+| `--config <path>` | Path to talond.yaml | `talond.yaml` |
+
+```bash
+# Inline prompt
+npx talonctl add-schedule --persona assistant --channel my-telegram \
+  --cron "0 8 * * 1-5" --label "Morning briefing" --prompt "Give me a morning briefing"
+
+# Reusable prompt file (resolves to personas/assistant/prompts/braintoss.md)
+npx talonctl add-schedule --persona assistant --channel my-telegram \
+  --cron "*/15 6-23 * * *" --label "Braintoss inbox" --prompt-file braintoss
+
+npx talonctl list-schedules --persona assistant
+npx talonctl remove-schedule abc123
+```
+
+### Sub-Agent Testing
+
+| Command        | Description                                      |
+| -------------- | ------------------------------------------------ |
+| `run-subagent` | Invoke a sub-agent directly (no daemon required) |
+
+**`run-subagent`** options:
+
+| Option                   | Description                                               | Default       |
+| ------------------------ | --------------------------------------------------------- | ------------- |
+| `--name <name>`          | Sub-agent name (required)                                 | —             |
+| `--input <json>`         | JSON input for the sub-agent (required)                   | —             |
+| `--config <path>`        | Path to talond.yaml                                       | `talond.yaml` |
+| `--subagents-dir <path>` | Sub-agents directory (overrides default 3-source loading) | —             |
+
+```bash
+npx talonctl run-subagent --name session-summarizer \
+  --input '{"transcript": "User: Hi\nAssistant: Hello!"}'
+npx talonctl run-subagent --name memory-retriever \
+  --input '{"query": "deployment steps"}'
+npx talonctl run-subagent --name my-agent --input '{}' --subagents-dir ./subagents
+```
+
+### Database and Operations
+
+| Command       | Description                                                    |
+| ------------- | -------------------------------------------------------------- |
+| `migrate`     | Apply pending database migrations                              |
+| `backup`      | Backup database, config, personas, and skills                  |
+| `doctor`      | Run diagnostic checks on environment, config, and dependencies |
+| `queue-purge` | Purge queue items by status                                    |
+
+**`backup`** options:
+
+| Option            | Description             | Default        |
+| ----------------- | ----------------------- | -------------- |
+| `--config <path>` | Path to talond.yaml     | `talond.yaml`  |
+| `--output <path>` | Backup output directory | auto-generated |
+
+**`queue-purge`** options:
+
+| Option              | Description                                                                                      | Default                  |
+| ------------------- | ------------------------------------------------------------------------------------------------ | ------------------------ |
+| `--ipc-dir <path>`  | IPC directory (overrides config default)                                                         | from config              |
+| `--timeout <ms>`    | Response timeout in milliseconds                                                                 | `5000`                   |
+| `--statuses <list>` | Comma-separated statuses to purge (pending, failed, completed, dead_letter, claimed, processing) | pending,failed,completed |
+| `--all`             | Purge all statuses including in-flight items                                                     | off                      |
+
+```bash
+npx talonctl migrate --config talond.yaml
+npx talonctl backup --output /backups/talon-$(date +%Y%m%d)
+npx talonctl doctor --config talond.yaml
+npx talonctl queue-purge
+npx talonctl queue-purge --statuses dead_letter,failed
+npx talonctl queue-purge --all
+```
+
+### WhatsApp Authentication
+
+| Command         | Description                                                   |
+| --------------- | ------------------------------------------------------------- |
+| `whatsapp-auth` | Authenticate a WhatsApp Baileys channel by scanning a QR code |
+
+**`whatsapp-auth`** options:
+
+| Option                | Description                         | Default          |
+| --------------------- | ----------------------------------- | ---------------- |
+| `--auth-dir <path>`   | Directory to store auth credentials | `./baileys-auth` |
+| `--timeout <seconds>` | Seconds to wait for QR scan         | `120`            |
+
+```bash
+npx talonctl whatsapp-auth --auth-dir ./baileys-auth
+npx talonctl whatsapp-auth --auth-dir ./baileys-auth --timeout 180
+```
+
+### A2A (Agent-to-Agent)
+
+| Command                       | Description                                         |
+| ----------------------------- | --------------------------------------------------- |
+| `a2a list`                    | List A2A tasks with optional filters                |
+| `a2a send <target> <message>` | Submit a manual A2A task to a persona (for testing) |
+
+**`a2a list`** options:
+
+| Option               | Description                                                            | Default       |
+| -------------------- | ---------------------------------------------------------------------- | ------------- |
+| `--status <state>`   | Filter by task state (submitted, working, completed, failed, canceled) | all           |
+| `--target <persona>` | Filter by target persona name                                          | all           |
+| `--limit <n>`        | Maximum number of tasks to show                                        | `20`          |
+| `--config <path>`    | Path to talond.yaml                                                    | `talond.yaml` |
+
+**`a2a send`** options:
+
+| Option               | Description         | Default       |
+| -------------------- | ------------------- | ------------- |
+| `--source <persona>` | Source persona name | `cli`         |
+| `--config <path>`    | Path to talond.yaml | `talond.yaml` |
+
+```bash
+npx talonctl a2a list
+npx talonctl a2a list --status working --target software-engineer
+npx talonctl a2a send software-engineer "Review the latest PR"
+npx talonctl a2a send software-engineer "Run tests" --source james
+```
+
+### Doctor Checks
+
+`talonctl doctor` runs 7 structured checks:
+
+1. **OS compatibility** — Verifies Linux or macOS
+2. **Node.js version** — Checks for Node 24+
+3. **Docker availability** — Verifies Docker is installed and running
+4. **Directory structure** — Ensures data directories exist
+5. **Config file** — Validates `talond.yaml` syntax and schema
+6. **Database migrations** — Checks for pending migrations
+7. **Config validation** — Deep validation of personas, channels, and references
+
+---
+
+## Deployment
+
+Talon supports three deployment modes.
+
+### 1. Native Daemon (systemd)
+
+The recommended mode for Linux servers. The daemon runs as a systemd service with automatic restart on failure.
+
+```bash
+# Install the service (detects user, directory, and node path)
+sudo ./deploy/install-service.sh
+
+# Or with explicit options
+sudo ./deploy/install-service.sh --user talon --dir /home/talon/talon
+
+# Start the daemon
+sudo systemctl start talond
+
+# Check status and follow logs
+sudo systemctl status talond
+journalctl -u talond -f
+
+# The daemon will auto-start on boot and restart on crash
+```
+
+The install script generates a systemd unit from `deploy/talond.service` with your paths substituted. It reads environment variables from `.env` in the project root via `EnvironmentFile`.
+
+If Codex subscription sub-agents are enabled, add `--codex-runner` to the
+install command. It installs a root-owned systemd dependency that launches the
+contained runner through Docker Compose before `talond`; the daemon itself is
+never given Docker-socket access. Complete the runner's one-time dedicated
+Codex login when the installer prints the command, then start `talond` as
+normal. See [Codex runner deployment](#codex-runner-deployment).
+
+The service includes security hardening: `NoNewPrivileges`, `PrivateTmp`, `ProtectKernelTunables`, `SystemCallFilter=@system-service`, `RestrictAddressFamilies`, and more.
+
+### 2. Containerized Daemon (Docker)
+
+The zero-build path — a published multi-arch image plus a starter bundle
+of config templates, a `talonctl` wrapper, and guided setup skills.
+
+```bash
+curl -fsSL https://github.com/ivo-toby/talon/releases/latest/download/talon-starter.tar.gz | tar xz
+cd talon-starter
+./install.sh
+cp .env.example .env                              # fill in secrets
+cp config/talond.example.yaml config/talond.yaml  # edit for your setup
+docker compose up -d
+```
+
+The image is published at `ghcr.io/ivo-toby/talond` (`:latest` and
+per-release tags, linux/amd64 + linux/arm64). The bundle bind-mounts
+`config/`, `personas/`, `data/`, and `userdata/` so you edit everything
+from the host. The image includes GitHub CLI (`gh`); set optional `GH_TOKEN`
+in `.env` for authenticated GitHub operations. The token is available to
+processes launched by `talond`, so scope it to the repositories and permissions
+needed. See [`starter/README.md`](starter/README.md) for the full walkthrough,
+[`starter/docs/providers.md`](starter/docs/providers.md) for provider configuration, and
+[`starter/docs/troubleshooting.md`](starter/docs/troubleshooting.md) when
+something misbehaves.
+
+To build the image yourself instead of pulling the published one:
+
+```bash
+docker build -f deploy/Dockerfile -t talond .
+```
+
+### 3. Wake-Only Mode (Timer)
+
+For low-traffic deployments. A systemd timer wakes the daemon periodically to process the queue, then exits.
+
+```bash
+sudo cp deploy/talond-wake.service /etc/systemd/system/
+sudo cp deploy/talond.timer /etc/systemd/system/
+
+sudo systemctl daemon-reload
+sudo systemctl enable talond.timer
+sudo systemctl start talond.timer
+```
+
+Default: wakes every 5 minutes. Adjust `OnUnitActiveSec` in `talond.timer`.
+
+### Deployment Files
+
+| File                                                       | Purpose                                           |
+| ---------------------------------------------------------- | ------------------------------------------------- |
+| [`deploy/talond.service`](deploy/talond.service)           | systemd service unit template                     |
+| [`deploy/install-service.sh`](deploy/install-service.sh)   | Install script (generates unit, enables service)  |
+| [`deploy/talon-codex-runner.service`](deploy/talon-codex-runner.service) | Contained Codex runner systemd dependency |
+| [`deploy/docker-compose.native-runner.yaml`](deploy/docker-compose.native-runner.yaml) | Loopback-only native daemon runner overlay |
+| [`deploy/Dockerfile`](deploy/Dockerfile)                   | Multi-stage talond container image (node:24-slim) |
+| [`deploy/Dockerfile.sandbox`](deploy/Dockerfile.sandbox)   | Agent sandbox image with SDK runtime              |
+| [`deploy/docker-compose.yaml`](deploy/docker-compose.yaml) | Example Compose setup                             |
+| [`deploy/talond.timer`](deploy/talond.timer)               | systemd timer (wake-only mode)                    |
+| [`deploy/talond-wake.service`](deploy/talond-wake.service) | systemd oneshot for timer-triggered wake          |
+
+---
+
+## Security Model
+
+Talon applies capability-based access control to its host tools and records
+side effects in its audit log. That limits what Talon exposes through its MCP
+bridge; it does not sandbox a provider runtime or make an external model or
+MCP server safe by itself. Docker container isolation for agent sandboxing is
+planned as an additional layer.
+
+### Host-Tools MCP Bridge
+
+Agents interact with the host through a small set of MCP tools exposed over a Unix socket. The daemon mediates all side effects — agents cannot access channels, databases, or the network directly.
+
+| Tool                  | Purpose                                                                  |
+| --------------------- | ------------------------------------------------------------------------ |
+| `schedule_manage`     | CRUD + list scheduled tasks (supports `promptFile` for reusable prompts) |
+| `channel_send`        | Send messages to channel connectors (supports `externalChatId` for explicit targeting; CLI-created schedules must pass it or use `channel_list` / `channel_broadcast`) |
+| `channel_list`        | List channels bound to the persona + their chat external_ids (discovery for `channel_send`) |
+| `channel_broadcast`   | Fan out a message to every chat the persona is bound to; skips channel-default bindings (no `thread_id`) with a warning |
+| `persona_send`        | Submit a delegated A2A task to another persona                           |
+| `persona_task_status` | Fetch the status or result of a delegated A2A task                       |
+| `persona_list`        | List personas available for delegation                                   |
+| `memory_access`       | Read/write per-thread memory                                             |
+| `net_http`            | Fetch external URLs                                                      |
+| `db_query`            | Read-only database queries                                               |
+| `subagent_invoke`     | Invoke a sub-agent by name                                               |
+| `background_agent`    | Launch and manage long-running background workers                        |
+| `execution_env`       | Create, exec, upload, download, checkpoint, and restore Sprite VMs       |
+
+### Capability System
+
+```mermaid
+flowchart TB
+    subgraph "Provider Runtime (host process)"
+        Agent["Agent calls MCP tool"]
+    end
+
+    subgraph "talond (policy enforcement)"
+        PR[Policy Engine]
+        CR[Capability Resolver]
+        EX[Execute Tool]
+        AU[Audit Log]
+    end
+
+    Agent --> PR
+    PR --> CR
+    CR -->|not configured| R[Reject + log]
+    CR -->|configured| EX
+    EX --> AU
+    R --> AU
+```
+
+Every MCP tool call goes through:
+
+1. **Policy Engine** — Validates the tool exists and maps to a capability label
+2. **Capability Resolver** — Checks the persona's configured capability labels
+3. **Audit Log** — Records the decision and result regardless of outcome
+
+### Database Query Isolation
+
+Agents can query the database via the `db.query` tool, but are constrained by five independent security layers:
+
+| Layer                     | Mechanism                                                                   | What it prevents                                              |
+| ------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 1. Regex pre-check        | Rejects non-SELECT statements and forbidden keywords (INSERT, DROP, etc.)   | Write operations via SQL                                      |
+| 2. Table whitelist        | Only 4 approved tables (`memory_items`, `schedules`, `messages`, `threads`) | Access to sensitive tables (personas, audit_log, queue_items) |
+| 3. Thread/persona scoping | Auto-injects `WHERE thread_id = ? AND persona_id = ?` clauses               | Cross-tenant data leakage between personas or threads         |
+| 4. Row limit              | Hard cap at 1,000 rows per query                                            | Resource exhaustion via large result sets                     |
+| 5. Read-only connection   | Separate SQLite connection opened with `{ readonly: true }`                 | Any write operation, even if all other layers are bypassed    |
+
+Complex SQL patterns (UNION, subqueries, CTEs, INTERSECT, EXCEPT) are rejected to prevent whitelist bypass via query composition. User-supplied WHERE conditions are wrapped in parentheses to prevent OR-based scoping escapes.
+
+### Secrets Management
+
+- Credentials use `${ENV_VAR}` references in `talond.yaml` and MCP `headers` / `env` fields — never hardcoded
+- Environment variables loaded from `.env` file at startup
+- `talonctl config-show` masks all secret values in output
+- `talonctl env-check` audits config and MCP references without printing values
+
+### `requireApproval` configuration
+
+The schema supports a `requireApproval` capability list:
+
+```yaml
+capabilities:
+  allow:
+    - channel.send:telegram
+    - memory.access
+  requireApproval:
+    - db.query:own
+```
+
+It is not an approval control today. The host-tool filter exposes tools listed
+in `requireApproval` in the same way as tools listed in `allow`; bridge-level
+approval enforcement is future work. Use the `allow` list to grant only the
+capabilities you are prepared to expose, and keep high-risk integrations out
+of a persona until their policy is implemented and verified.
+
+---
+
+## Durable Queue
+
+The message queue is the backbone of Talon's resilience. Every inbound message is persisted to SQLite before processing begins.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: enqueue
+    Pending --> Claimed: dequeue
+    Claimed --> Processing: handler starts
+    Processing --> Completed: success
+    Processing --> Pending: transient error<br/>(retry with backoff)
+    Processing --> DeadLetter: max attempts<br/>exceeded
+    DeadLetter --> [*]: manual review
+    Completed --> [*]
+```
+
+- **Crash recovery**: On restart, in-flight items (status `claimed` or `processing`) are reset to `pending`
+- **FIFO per thread**: Messages within a thread are processed in order, no interleaving
+- **Cross-thread parallelism**: Different threads process concurrently up to `max_concurrent_containers`
+- **Exponential backoff**: Failed items retry with configurable base delay (1s), max delay (60s), and jitter
+- **Dead-letter queue**: After max attempts (default 3), items move to dead-letter for manual review
+
+---
+
+## Memory System
+
+Each conversation thread gets a persistent workspace:
+
+```
+data/threads/<thread_id>/
+  memory/          # human-editable notes (CLAUDE.md, etc.)
+  attachments/     # ingested inbound files
+  artifacts/       # agent output files
+  ipc/
+    input/         # host -> container messages
+    output/        # container -> host messages
+    errors/        # failed IPC messages
+```
+
+### Memory Layers
+
+| Layer             | Storage                | Purpose                                         |
+| ----------------- | ---------------------- | ----------------------------------------------- |
+| Transcript        | `messages` table       | Canonical message log, never rewritten          |
+| Working memory    | In-prompt context      | Recent message window included in agent prompts |
+| Thread notebook   | Filesystem (`memory/`) | Human-editable per-thread notes                 |
+| Structured memory | `memory_items` table   | Extracted facts and summaries                   |
+
+Memory writes are gated by persona capabilities. Thread notebooks persist across container restarts.
+
+---
+
+## Scheduling
+
+Schedules are managed by agents at runtime via the `schedule_manage` MCP tool — agents can create, update, delete, and list their own scheduled tasks. Scheduled tasks flow through the same queue and routing system as regular messages.
+
+```yaml
+# Config only sets the tick interval — schedules are agent-managed
+scheduler:
+  tickIntervalMs: 5000
+```
+
+Agents create schedules like:
+
+```
+"Schedule a daily briefing at 8am: cron 0 8 * * *"
+"Check system health every 30 minutes"
+```
+
+| Schedule Type | Example     | Behavior                     |
+| ------------- | ----------- | ---------------------------- |
+| Cron          | `0 9 * * *` | Fires at 09:00 daily         |
+| Interval      | `30m`       | Recurring at fixed intervals |
+| One-shot      | (future)    | Single execution at set time |
+
+Scheduled tasks are enqueued through the standard queue pipeline, subject to the same retry and dead-letter policies as regular messages. Cron expressions evaluate in system local time.
+
+### Dedicated Execution Threads
+
+Schedules created by the agent via `schedule_manage` are stored against a dedicated execution thread keyed by `(persona, channel, origin chat)` — not the live chat thread. This keeps scheduled runs from polluting the live conversation's session state.
+
+Scheduled executions are intentionally short-context, one-shot runs. They do not use thread provider affinity, do not restore or persist provider session IDs, do not inject prior schedule-thread transcript through the context assembler, do not run context rotation / observational-memory compression, and do not persist skipped final assistant wrap-up text as outbound messages. A scheduled task only reaches the user when the agent explicitly calls `channel_send`; successful `channel_send` deliveries are persisted as outbound messages on the live recipient thread so follow-up replies include the scheduled message in conversation context.
+
+The dedicated thread records the origin chat's `external_id` in metadata (`kind: "schedule"`, `originExternalId: "<chat id>"`). Outbound delivery (`channel_send`, typing indicators) reads that field and routes messages back to the originating chat, so users still receive scheduled notifications on the channel they set the schedule up from.
+
+Scheduled tasks created from the CLI (`talonctl add-schedule`) have no `originExternalId` in their schedule-thread metadata, so `channel_send` cannot infer a recipient chat — the tool errors and points at the discovery/broadcast tools. Use `channel_list` to discover available chats, then `channel_send` with an explicit `externalChatId`, or use `channel_broadcast` to fan out to every chat the persona is bound to. Broadcasts skip channel-default bindings (those with `thread_id IS NULL`) with a warning in the `{ delivered, skipped, failed }` result summary.
+
+List / update / cancel / delete remain persona-scoped rather than thread-scoped, so schedules created from the live chat are still fully visible and editable from the live chat thread.
+
+### Task Prompt Files
+
+Schedules can reference reusable prompt files stored in a persona's `prompts/` directory instead of embedding prompt text inline. This keeps long or complex prompts version-controlled and editable without touching the schedule itself.
+
+```
+personas/
+  assistant/
+    system.md
+    personality/
+      01-tone.md
+    prompts/               # task prompt files
+      morning-briefing.md
+      weekly-review.md
+```
+
+When creating a schedule, use `promptFile` (the filename without `.md`) instead of `prompt`:
+
+```
+"Create a schedule at 8am weekdays using the morning-briefing prompt file"
+```
+
+The tool call uses `promptFile` in place of `prompt` — they are mutually exclusive:
+
+```json
+{
+  "action": "create",
+  "cronExpr": "0 8 * * 1-5",
+  "label": "Morning briefing",
+  "promptFile": "morning-briefing"
+}
+```
+
+Prompt files are read on demand when the schedule fires, so edits to the file take effect on the next execution without restarting the daemon. The `talonctl add-persona` command scaffolds an empty `prompts/` directory alongside the `personality/` folder.
+
+---
+
+## Execution Environments (Sprites)
+
+Background agents can run their work inside isolated [Sprites.dev](https://sprites.dev) Firecracker VMs instead of on the host filesystem. A sandboxed agent gets a dedicated VM where it can install packages, build code, run tests, and start servers — without touching the host.
+
+### Why sandboxed execution
+
+Running agent work directly on the host has risks: a coding agent could accidentally delete files, install conflicting dependencies, or leave orphaned processes. Sprites VMs give each task a clean, isolated environment that is destroyed when the task completes.
+
+Concrete use cases:
+
+- **Code review with live testing** — the agent clones a PR branch into a Sprite, runs the test suite, and reports results without polluting the host with dependencies or build artifacts
+- **Dependency upgrades** — the agent installs updated packages inside a Sprite, runs the full build and test pipeline, and only downloads the updated lockfile if everything passes
+- **Multi-variant experiments** — checkpoint a Sprite after initial setup, then restore repeatedly to test different approaches from the same baseline
+- **Host-isolated build/test runs** — run builds, tests, and setup in a VM that does not get direct host filesystem access; use additional egress controls if you need network isolation guarantees
+
+### How it works
+
+When a foreground agent spawns a background worker with `sandbox=true`:
+
+1. Talon provisions a Sprite VM via the Sprites.dev API
+2. If `workingDirectory` is provided, Talon uploads that directory into the VM
+3. The background worker runs with a per-task control directory as its `cwd` (not the host repo)
+4. The worker uses the `execution_env` tool to run commands, transfer files, and manage checkpoints inside the VM
+5. When the task completes (or fails, times out, or is cancelled), Talon destroys the VM automatically
+
+### Configuration
+
+Enable Sprites in `talond.yaml`:
+
+```yaml
+sprites:
+  enabled: true
+  token: ${SPRITES_TOKEN}
+  workingDirectory: /workspace
+  createTimeoutMs: 60000
+  execTimeoutMs: 1200000 # 20 minutes
+  autoDestroyOnCompletion: true
+  resourceLimits:
+    cpus: 2
+    memoryMb: 4096
+    diskGb: 20
+```
+
+| Option                    | Default                   | Description                                                                       |
+| ------------------------- | ------------------------- | --------------------------------------------------------------------------------- |
+| `enabled`                 | `false`                   | Enable Sprites integration                                                        |
+| `token`                   | —                         | Sprites.dev API token (required when enabled)                                     |
+| `apiBaseUrl`              | `https://api.sprites.dev` | API endpoint                                                                      |
+| `defaultBaseSnapshot`     | —                         | Reserved for future snapshot-based creation; currently unsupported by the runtime |
+| `workingDirectory`        | `/workspace`              | Default working directory inside the VM                                           |
+| `createTimeoutMs`         | `60000`                   | Timeout for VM creation                                                           |
+| `execTimeoutMs`           | `1200000`                 | Default command execution timeout (20 min)                                        |
+| `autoDestroyOnCompletion` | `true`                    | Destroy VMs when the owning task finishes                                         |
+| `resourceLimits.cpus`     | `2`                       | CPU cores allocated to each VM                                                    |
+| `resourceLimits.memoryMb` | `4096`                    | RAM in MB                                                                         |
+| `resourceLimits.diskGb`   | `20`                      | Disk in GB                                                                        |
+
+### Persona setup
+
+The persona that spawns sandboxed background agents needs both `subagent.background` and `execution.env` capabilities. You can also set per-persona defaults for sandbox behavior:
+
+```yaml
+personas:
+  - name: software-engineer
+    model: claude-sonnet-4-6
+    capabilities:
+      allow:
+        - subagent.background
+        - execution.env
+        - channel.send:telegram
+    executionEnv:
+      sandboxDefault: true # sandbox=true unless overridden
+      workingDirectory: /workspace
+      resourceLimits:
+        cpus: 4
+        memoryMb: 8192
+```
+
+| Persona option                  | Description                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| `executionEnv.sandboxDefault`   | When `true`, `background_agent spawn` defaults to sandboxed                       |
+| `executionEnv.baseSnapshot`     | Reserved for future snapshot-based creation; currently unsupported by the runtime |
+| `executionEnv.workingDirectory` | Override the VM working directory                                                 |
+| `executionEnv.resourceLimits`   | Override CPU, memory, and disk limits                                             |
+
+### The `execution_env` tool
+
+Foreground agents and background workers spawned with `sandbox=true` interact with Sprite VMs through the `execution_env` host tool. Available actions:
+
+| Action       | Purpose                                                     | Required args                            |
+| ------------ | ----------------------------------------------------------- | ---------------------------------------- |
+| `create`     | Provision a new VM (usually handled automatically on spawn) | —                                        |
+| `exec`       | Run a command inside the VM                                 | `envId`, `command`                       |
+| `upload`     | Copy files from the host into the VM                        | `envId`, `sourcePath`, `destinationPath` |
+| `download`   | Copy files from the VM back to the host                     | `envId`, `sourcePath`, `destinationPath` |
+| `checkpoint` | Snapshot the current VM state                               | `envId`                                  |
+| `restore`    | Roll the VM back to a previous checkpoint                   | `envId`, `checkpointId`                  |
+| `destroy`    | Tear down the VM                                            | `envId`                                  |
+
+Host file transfers are restricted to Talon's allowed host roots. For foreground agents, that is the thread workspace. For background agents, that is the requested `workingDirectory`, plus the per-task control directory when sandboxed. Directory uploads require `recursive: true`; downloads are file-only.
+
+### Checkpoint and restore
+
+Checkpoints let agents save and restore VM state. This is useful for iterative workflows where the agent wants to try something, check the result, and roll back if it didn't work:
+
+```
+1. Agent sets up the environment (install deps, build)
+2. Agent calls checkpoint → gets checkpoint ID
+3. Agent runs tests with configuration A
+4. Tests fail → agent calls restore with the checkpoint ID
+5. Agent tries configuration B from the same clean baseline
+```
+
+Restore is in-place: it resets the existing VM to the checkpoint state rather than creating a new VM. The original `envId` stays valid.
+
+### Lifecycle and cleanup
+
+Talon destroys the primary Sprite VM on every terminal path:
+
+- Normal task completion
+- Task failure or timeout
+- Explicit cancellation
+- Daemon shutdown
+- Orphan recovery on daemon restart
+
+If `autoDestroyOnCompletion` is `false`, the VM persists after task completion and must be destroyed manually via the `execution_env destroy` action.
+
+---
+
+## MCP Integration
+
+Talon supports the [Model Context Protocol](https://modelcontextprotocol.io)
+for connecting external tool servers to personas through skills. Add a server
+to a skill that is attached to the persona:
+
+```bash
+# Local stdio server
+npx talonctl add-mcp --skill web-search --name filesystem \
+  --transport stdio --command npx --args -y @modelcontextprotocol/server-filesystem /userdata
+
+# Remote HTTP server with OAuth
+npx talonctl add-mcp --skill work-search --name glean --transport http \
+  --url https://search.example.com/mcp --auth oauth2
+npx talonctl auth-mcp work-search:glean
+```
+
+For static tokens, use `${ENV_VAR}` in HTTP headers or stdio `--env` values,
+and put the real value in `.env`. Do not place credentials literally in the
+skill's MCP JSON file. The Docker starter uses
+`talonctl auth-mcp <skill>:<server> --docker`; see
+[HTTP MCP Servers and OAuth](#http-mcp-servers-and-oauth) for client setup,
+refresh, and callback details.
+
+MCP servers are passed through to the provider runtime at execution time. Each
+persona receives only the servers supplied by its configured skills.
+
+### Per-server MCP request timeout and tool-output cap
+
+Each MCP server can carry two optional numeric keys in its skill JSON
+(`skills/<skill>/mcp/<server>.json`), and `talonctl add-mcp` accepts them as
+flags. Both values are Talon runtime metadata: only the Mastra /
+OpenAI-compatible provider path (both chat-completions and Responses API
+modes) forwards them to the wrapper; native Claude, Gemini, and Codex CLI
+runs omit this metadata, so these limits have no effect on those providers.
+
+```bash
+npx talonctl add-mcp --skill work-search --name glean --transport http \
+  --url https://search.example.com/mcp --auth oauth2 \
+  --timeout-ms 180000 --tool-output-cap 12000
+```
+
+- `timeoutMs` — per-MCP-request timeout in milliseconds (integer ≥ 1000).
+  When omitted, Mastra's 60 000 ms default applies. This is Talon runtime
+  metadata only — it is never sent to the MCP server as a header or auth
+  value. The outer query timeout (`queryTimeoutMinutes`) still wins; the
+  per-server timeout only bounds individual `listTools` / `callTool`
+  operations.
+- `toolOutputCap` — per-server cap, in characters, on a stringified MCP
+  tool result before it enters the agent's message history (integer ≥ 0).
+  `0` disables excerpting **for that MCP server only**. When omitted, the
+  provider-level `toolOutputCap` (see `config/talond.example.yaml`) or the
+  4 000-char provider default applies. Precedence: explicit per-server
+  value > provider-level fallback > 4 000. Setting the provider-level
+  `toolOutputCap` to `0` disables only that fallback — an explicit positive
+  per-server cap still applies.
+
+These caps bound MCP model-history injection, not network response bytes or
+a full-output memory limit. When any effective MCP cap is positive, MCP tool
+results (including those from servers capped at `0`) are stored in a
+shared, run-local in-memory store for the current run; the model can
+retrieve up to 8 000 content characters at a time (additional framing
+apart) via the built-in `fetch_tool_output` tool. If all effective MCP caps
+are `0`, no wrapper or recovery is injected and `fetch_tool_output` is
+unavailable for MCP results. The built-in workspace file/shell tools and
+their behavior are unchanged. Note: if a discovered MCP tool already owns
+the reserved `fetch_tool_output` name, Talon does not overwrite it; the
+run-local recovery is skipped for that run (delegating to the MCP tool,
+with a warning logged).
+
+### Existing Glean installs
+
+The repository's Glean skill definition (`skills/glean/mcp/glean.json`)
+carries `timeoutMs: 180000` and `toolOutputCap: 12000` under `config`. That
+file is git-ignored and local-only: the Docker image does not package
+`skills/` (it bind-mounts `/skills`), and neither starter bundle ships a
+Glean skill. Rebuilding the image therefore does **not** update a Glean
+JSON a user has already copied into their mounted or local `skills/` tree.
+
+For an existing install, edit the two numeric keys in your actual Glean
+skill MCP JSON (wherever it is mounted or copied, e.g.
+`skills/glean/mcp/glean.json`): add or replace `"timeoutMs": 180000` and
+`"toolOutputCap": 12000` **under `config`**, preserving all existing
+`name`, `transport`, `url`, headers, env, and auth fields. Do not replace
+the whole file, and do not re-run `add-mcp` on an existing name (duplicate
+names are rejected). Example shape (generic URL):
+
+```json
+{
+  "name": "glean",
+  "config": {
+    "name": "glean",
+    "transport": "http",
+    "url": "https://search.example.com/mcp",
+    "timeoutMs": 180000,
+    "toolOutputCap": 12000
+  }
+}
+```
+
+Because no release artifact or Docker image currently bundles this Glean
+definition, any release claiming bundled Glean limit defaults is a release
+blocker until packaging delivers the file.
+
+---
+
+## Token Usage Tracking
+
+When using Anthropic API keys, Talon records token usage from Claude runtime results in the `runs` table:
+
+- Input tokens, output tokens, cache read/write tokens per run
+- `total_cost_usd` from Claude runtime results
+
+Per-persona budget limits and a `talonctl usage` report command are planned (TASK-047).
+
+---
+
+## Observability with Langfuse
+
+[Langfuse](https://langfuse.com) is an open-source LLM observability platform. When enabled, Talon exports structured traces for every agent run so you can inspect latency, token usage, tool calls, and model inputs/outputs from a single dashboard.
+
+### Why it matters
+
+Running autonomous agents across multiple channels means you lose visibility fast. Langfuse gives you:
+
+- **Trace-level debugging** — See the full chain of events for any message: which persona handled it, what tools were called, what the model saw and produced
+- **Cost tracking** — Token counts and cost breakdowns per trace when the provider reports them
+- **Latency profiling** — Spot slow tool calls or bloated prompts before they become user-facing problems
+- **Environment tagging** — Separate production, staging, and development traces cleanly
+
+### How it works
+
+Talon uses the `@langfuse/otel` span processor to emit OpenTelemetry spans directly to Langfuse. Each agent run creates a trace with nested spans for generations, tool invocations, and retriever calls. When Langfuse is disabled (the default), a noop service replaces it — no Langfuse libraries are initialized and no network calls are made. If initialization fails when enabled, Talon logs a warning and falls back to the noop service rather than crashing, so `enabled: true` does not guarantee traces will be exported.
+
+### Setup
+
+**1. Get Langfuse credentials**
+
+Sign up at [cloud.langfuse.com](https://cloud.langfuse.com) or deploy a [self-hosted instance](https://langfuse.com/docs/deployment/self-host). Create a project and grab the public and secret keys.
+
+**2. Set environment variables**
+
+```bash
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+```
+
+**3. Add the config block to `talond.yaml`**
+
+```yaml
+langfuse:
+  enabled: true
+  publicKey: ${LANGFUSE_PUBLIC_KEY}
+  secretKey: ${LANGFUSE_SECRET_KEY}
+  baseUrl: https://cloud.langfuse.com # or your self-hosted URL
+  environment: production # tags traces by environment
+  # release: v1.2.3                      # optional version tag
+  # exportMode: batched                  # batched (default) or immediate
+  # flushAt: 20                          # spans buffered before flush
+  # flushIntervalSeconds: 5              # max seconds between flushes
+```
+
+All fields except `enabled`, `publicKey`, and `secretKey` have sensible defaults. If `enabled` is `false` (or the section is omitted entirely), no Langfuse dependencies are loaded and no network calls are made.
+
+### Configuration reference
+
+| Field                  | Default                      | Description                                           |
+| ---------------------- | ---------------------------- | ----------------------------------------------------- |
+| `enabled`              | `false`                      | Master switch for Langfuse integration                |
+| `publicKey`            | `''`                         | Langfuse project public key (required when enabled)   |
+| `secretKey`            | `''`                         | Langfuse project secret key (required when enabled)   |
+| `baseUrl`              | `https://cloud.langfuse.com` | Langfuse API endpoint                                 |
+| `environment`          | `production`                 | Environment tag attached to all traces                |
+| `release`              | —                            | Optional release/version tag                          |
+| `exportMode`           | `batched`                    | `batched` buffers spans; `immediate` sends one by one |
+| `flushAt`              | `20`                         | Number of spans buffered before a flush               |
+| `flushIntervalSeconds` | `5`                          | Maximum seconds between flushes                       |
+
+---
+
+## Development
+
+### Build
+
+```bash
+npm install
+npm run build          # TypeScript -> dist/
+```
+
+### Test
+
+```bash
+npm test               # Run all tests
+npm run test:watch     # Watch mode
+npm run test:coverage  # Coverage report (80% target)
+```
+
+The test suite includes:
+
+- **Unit tests** — Every module, repository, connector, and CLI command
+- **Integration tests** — IPC round-trips, queue durability, channel registry lifecycle
+- **End-to-end tests** — Full message flow from inbound to outbound with real SQLite
+
+### Lint and Format
+
+```bash
+npm run lint           # ESLint with TypeScript strict rules
+npm run format         # Prettier
+```
+
+### Pull Request Validation
+
+Pull requests run the `Verify PR` GitHub Actions workflow on Node.js 24. The
+workflow installs dependencies with `npm ci`, then runs `npm run build` and
+path-targeted Vitest checks selected from changed files by
+`scripts/select-pr-tests.mjs`. It also runs `npm run lint` as an advisory step
+until the existing lint baseline is clean enough to make blocking.
+
+The workflow also runs on pushes to `main` and can be started manually from the
+Actions tab. Manual runs can choose `test_scope=full` when a broad regression
+pass is needed; PRs use `targeted` by default so small documentation, workflow,
+or setup changes do not run the full Talon suite.
+
+For daemon, channel, provider, queue, or execution-environment changes, pair the
+PR workflow with the local Talon smoke harness documented in `AGENTS.md` or a
+Sprite-based full validation run.
+
+### Dev Server
+
+```bash
+npm run dev            # tsx watch mode with auto-reload
+```
+
+### Troubleshooting: `better-sqlite3` bindings error
+
+If you see an error like:
+
+```
+Error: Could not locate the bindings file. Tried:
+ → .../node_modules/better-sqlite3/build/Release/better_sqlite3.node
+ ...
+```
+
+…the native module needs to be rebuilt for your current Node version. This
+commonly happens after a Node upgrade or a fresh `npm install` where
+`prebuild-install` reports success but does not produce a usable binary.
+
+Rebuild from source:
+
+```bash
+npm run rebuild:sqlite
+```
+
+This runs `node-gyp rebuild --release` inside `node_modules/better-sqlite3`,
+which is more reliable than `npm rebuild better-sqlite3`.
+
+---
+
+## Project Structure
+
+```
+talon/
+  config/
+    talond.yaml.example          # Annotated example configuration
+  deploy/
+    Dockerfile                   # talond container image
+    Dockerfile.sandbox           # Agent sandbox image
+    docker-compose.yaml          # Example Compose setup
+    docker-compose.native-runner.yaml # Native Codex runner loopback overlay
+    talond.service               # systemd service unit
+    talon-codex-runner.service   # systemd Codex runner dependency
+    talond.timer                 # systemd timer (wake-only)
+    talond-wake.service          # Oneshot service for timer wake
+  src/
+    channels/
+      connectors/
+        telegram/                # Telegram Bot API connector
+        slack/                   # Slack Events API connector
+        discord/                 # Discord Gateway + REST connector
+        whatsapp-business/       # WhatsApp Cloud API connector
+        whatsapp-baileys/        # WhatsApp Web (Baileys) connector
+        email/                   # IMAP + SMTP connector
+        terminal/                # WebSocket terminal connector
+      channel-registry.ts        # Connector lifecycle management
+      channel-router.ts          # Thread -> persona routing
+      channel-types.ts           # ChannelConnector interface
+    cli/
+      commands/                  # talonctl subcommands
+      index.ts                   # CLI entry point (commander)
+    collaboration/
+      supervisor.ts              # Multi-agent supervisor
+      worker-manager.ts          # Worker sandbox orchestration
+    core/
+      config/                    # YAML loader + Zod schemas
+      database/
+        migrations/              # Versioned SQL migrations
+        repositories/            # Repository pattern (12 repos)
+        connection.ts            # SQLite connection factory
+      errors/                    # TalonError hierarchy (16 error types)
+      logging/                   # pino logger + audit logger
+      types/                     # Result helpers, common types
+    daemon/
+      daemon.ts                  # TalondDaemon orchestrator
+      lifecycle.ts               # PID file, crash recovery
+      signal-handler.ts          # SIGTERM/SIGINT handling
+      watchdog.ts                # systemd watchdog heartbeat
+    ipc/
+      ipc-writer.ts              # Atomic file write
       ipc-reader.ts              # Directory poll + validate
       ipc-channel.ts             # Bidirectional IPC channel
       daemon-ipc-server.ts       # talond <-> talonctl IPC

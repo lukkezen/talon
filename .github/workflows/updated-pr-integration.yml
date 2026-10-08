@@ -39,6 +39,7 @@ jobs:
           sh -n talon-haos/run.sh
           node --check talon-haos/check-config.cjs
           node --check talon-haos/ingress-proxy.cjs
+          node --test talon-haos/ingress-proxy.test.cjs
   staging-image:
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -67,4 +68,4 @@ jobs:
           file: ./talon-haos/Dockerfile
           platforms: linux/amd64
           push: false
-          tags: talon-haos:1.0.8-check
+          tags: talon-haos:1.0.9-check

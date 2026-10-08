@@ -1,0 +1,19 @@
+name: PR 289 Connector Support Validation
+on:
+  push:
+    branches: [test/pr-289-connector-support]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx vitest run tests/unit/tools/host-tools/channel-send.test.ts tests/unit/channels/connectors/telegram/telegram-connector.test.ts
+      - run: npx eslint src/tools/host-tools/channel-send.ts src/channels/connectors/telegram/telegram-connector.ts src/channels/channel-types.ts

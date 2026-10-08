@@ -26,6 +26,14 @@ RUN set -eu; \
     node --check /opt/talond/dist/tools/host-tools-mcp-server.js; \
     node --check /opt/talond/dist/channels/connectors/telegram/telegram-connector.js
 
+# Apply the fork-only MCP input-schema fix to the pinned upstream runtime.
+# Keep the existing video overlay and private HA configuration unchanged.
+RUN set -eu; \
+    curl -fsSL "https://raw.githubusercontent.com/lukkezen/talon/83a05ec78e71f3613b07347638eb31d2d2f2b5fd/src/providers/openai-compatible/agent-cli/responses-api.ts" \
+      -o /tmp/talon-responses-api.ts; \
+    node -e 'const fs=require("node:fs"); const {stripTypeScriptTypes}=require("node:module"); const source=fs.readFileSync("/tmp/talon-responses-api.ts","utf8"); if (!source.includes("z.toJSONSchema(value as z.ZodType)")) throw new Error("Missing MCP schema fix"); const target="/opt/talond/dist/providers/openai-compatible/agent-cli/responses-api.js"; if (!fs.existsSync(target)) throw new Error("Missing Responses runtime"); fs.writeFileSync(target,stripTypeScriptTypes(source,{mode:"transform"}));'; \
+    node --check /opt/talond/dist/providers/openai-compatible/agent-cli/responses-api.js
+
 COPY run.sh /run.sh
 COPY talonctl /usr/local/bin/talonctl
 RUN chmod 0755 /run.sh /usr/local/bin/talonctl && mkdir -p /data/talon

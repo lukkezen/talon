@@ -1,3 +1,9 @@
+## 0.8.4
+
+- Adds runtime diagnostics for the exact MCP tool schema shape exposed to the OpenAI Responses provider.
+- Logs each tool's converted property names and required fields without logging tool arguments, tokens, or file contents.
+- Keeps the existing nonfatal fallback while we identify the remaining schema adapter mismatch.
+
 ## 0.8.2
 
 - Packages the fork-only OpenAI Responses MCP tool input-schema fix from commit 83a05ec.

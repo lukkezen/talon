@@ -53,3 +53,18 @@ jobs:
           platforms: linux/amd64
           push: false
           tags: talon-haos:integration-test
+
+  ha-addon-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build Home Assistant add-on with real add-on directory context
+        uses: docker/build-push-action@v6
+        with:
+          context: ./talon-haos
+          file: ./talon-haos/Dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: talon-haos:1.0.7-check

@@ -128,6 +128,19 @@ export async function runResponsesLoop(input: ResponsesLoopInput): Promise<Respo
       };
     }
 
+    // Diagnostics: log only argument field names, never values or signed URLs.
+    for (const call of calls) {
+      if (!call.name.includes('copy_to_export') && !call.name.includes('channel_send')) continue;
+      const argumentKeys = isRecord(call.input) ? Object.keys(call.input) : [];
+      process.stderr.write(JSON.stringify({
+        level: 'info',
+        msg: 'openai-compatible: tool call argument keys',
+        tool: call.name,
+        argumentKeys,
+        hasInputError: Boolean(call.inputError),
+      }) + '\\n'.replace('\\n', '\n'));
+    }
+
     nextInput = await executeFunctionCalls(calls, input);
   }
 

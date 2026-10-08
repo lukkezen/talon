@@ -5,7 +5,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { install, modules } = require('./install-runtime-overlays.cjs');
 
-test('install processes all four runtime modules', (t) => {
+test('install processes all six runtime modules including Codex fixes', (t) => {
+  assert.equal(modules.length, 6);
+  assert.ok(modules.includes('providers/codex-cli-provider'));
+  assert.ok(modules.includes('cli/commands/test-provider'));
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'talon-overlays-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const sourceRoot = path.join(root, 'src');

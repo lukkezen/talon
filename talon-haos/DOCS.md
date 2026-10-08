@@ -9,11 +9,6 @@ By default, Talon stores its configuration, workspace, and database in private
 persistent storage under `/data/talon`. Use `storage_path` to select another
 absolute directory inside `/data`.
 
-Set `instance` to the workspace name you want to open (for example, `D66`).
-Leaving it empty selects `default`. The instance setting selects one workspace;
-it does not start additional Talon daemons. Existing workspace configuration
-and skill definitions are reused without copying files.
-
 The initial workspace configuration is created only when `talond.yaml` is
 absent. Normal restarts and upgrades retain existing state and settings.
 Changing `storage_path` does not relocate existing files; move the workspace

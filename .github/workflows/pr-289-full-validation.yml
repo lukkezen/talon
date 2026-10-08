@@ -1,0 +1,26 @@
+name: PR 289 Full Validation
+on:
+  push:
+    branches: [test/pr-289-full-validation]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: TypeScript build
+        run: npm run build
+      - name: Full test suite
+        if: always()
+        run: npm test
+      - name: Lint touched production files
+        if: always()
+        run: npx eslint src/tools/host-tools/channel-send.ts src/tools/host-tools/attachment-download.ts src/tools/host-tools-bridge.ts src/channels/channel-types.ts src/channels/connectors/telegram/telegram-connector.ts src/core/errors/error-types.ts src/tools/host-tools-mcp-server.ts

@@ -7,6 +7,8 @@ const modules = [
   'tools/host-tools-mcp-server',
   'channels/connectors/telegram/telegram-connector',
   'providers/openai-compatible/agent-cli/responses-api',
+  'providers/codex-cli-provider',
+  'cli/commands/test-provider',
 ];
 function install(sourceRoot, runtimeRoot) {
   // Transform all modules before touching the runtime.

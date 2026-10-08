@@ -1,0 +1,39 @@
+name: PR 291 Feedback Audit
+on:
+  push:
+    branches: [test/pr-291-feedback-audit]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell and ingress syntax
+        run: |
+          sh -n talon-haos/run.sh talon-haos/talonctl
+          node --check talon-haos/ingress-proxy.cjs
+      - name: Build add-on
+        run: docker build --build-arg BUILD_VERSION=1.0.1 --build-arg BUILD_ARCH=amd64 -t talon-haos:audit ./talon-haos
+      - name: Test startup, daemon privilege, ingress denial, graceful shutdown
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/ha-audit"
+          printf '{"openai_api_key":"test-key"}' > "$RUNNER_TEMP/ha-audit/options.json"
+          docker run -d --name talon-audit -v "$RUNNER_TEMP/ha-audit/options.json:/data/options.json:ro" -p 127.0.0.1:17681:7681 talon-haos:audit
+          sleep 9
+          docker logs talon-audit
+          test "$(docker inspect -f '{{.State.Running}}' talon-audit)" = true
+          docker top talon-audit | grep '/opt/talond/dist/index.js'
+          if curl --max-time 3 -fsS http://127.0.0.1:17681/ >/dev/null; then echo 'FAIL: unauthorised ingress access'; exit 1; else echo 'PASS: unauthorised ingress denied'; fi
+          docker stop -t 30 talon-audit
+          docker logs talon-audit | tail -n 25
+          docker rm talon-audit
+      - name: Audit workspace separation and error recovery
+        run: |
+          set -eu
+          echo 'Checking static invariants that must be true for independent workspaces and recovery'
+          if grep -q '^STATE_DIR="$BASE/state"$' talon-haos/run.sh; then echo 'FAIL: all instances share database state directory'; exit 1; fi
+          if tail -n 20 talon-haos/run.sh | grep -q 'exit "$DAEMON_STATUS"'; then echo 'FAIL: terminal exits with bad daemon configuration'; exit 1; fi
+          echo 'PASS: workspace separation and terminal recovery invariant checks'

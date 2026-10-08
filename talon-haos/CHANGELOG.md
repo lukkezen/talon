@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3
+
+- Respect `CODEX_HOME` when locating Codex CLI authentication for provider sessions and provider tests.
+- Increase the Codex provider smoke-test timeout from 30 to 120 seconds.
+- Add regression tests for Codex authentication handling.
+
 ## 1.0.2
 
 - Keep Codex CLI authentication in the add-on's persistent storage across restarts by setting `CODEX_HOME` for the daemon and terminal.

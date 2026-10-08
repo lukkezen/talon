@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { RequestContext } from '@mastra/core/di';
 import type { Tool, ToolExecutionContext } from '@mastra/core/tools';
 import type { Workspace } from '@mastra/core/workspace';
@@ -546,6 +547,12 @@ function schemaToJsonSchema(value: unknown): Record<string, unknown> {
     return normalizeJsonSchema(jsonSchema);
   }
 
+  // Mastra exposes MCP input schemas as Zod objects. Zod 4 uses the
+  // module-level converter, not a schema.toJSONSchema() instance method.
+  if (isRecord(value) && isRecord(value._zod)) {
+    return normalizeJsonSchema(z.toJSONSchema(value as z.ZodType));
+  }
+
   return normalizeJsonSchema(value);
 }
 
@@ -560,6 +567,11 @@ function normalizeJsonSchema(value: unknown): Record<string, unknown> {
     return rest;
   }
 
+  // An unknown nonempty schema must never silently become a zero-argument
+  // tool: that makes required MCP arguments invisible to the model.
+  if (Object.keys(value).length > 0) {
+    throw new Error('Unsupported tool input schema; refusing to expose an empty schema');
+  }
   return { type: 'object', properties: {}, required: [] };
 }
 

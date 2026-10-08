@@ -27,7 +27,7 @@ jobs:
           set -eu
           mkdir -p "$RUNNER_TEMP/mounted" "$RUNNER_TEMP/private"
           ln -s /data/escape-target "$RUNNER_TEMP/mounted/link"
-          printf '{"storage_path":"/data/link","openai_api_key":"test-key"}' > "$RUNNER_TEMP/bad.json"
-          docker run --rm --name ha-symlink -v "$RUNNER_TEMP/bad.json:/data/options.json:ro" -v "$RUNNER_TEMP/mounted/link:/data/link" -v "$RUNNER_TEMP/private:/data/escape-target" talon-haos:paths > "$RUNNER_TEMP/log" 2>&1 && { echo "Unexpected successful startup"; exit 1; } || true
+          printf '{"storage_path":"/data/talon/link","openai_api_key":"test-key"}' > "$RUNNER_TEMP/bad.json"
+          docker run --rm --name ha-symlink -v "$RUNNER_TEMP/bad.json:/data/options.json:ro" -v "$RUNNER_TEMP/mounted:/data/talon" -v "$RUNNER_TEMP/private:/data/escape-target" talon-haos:paths > "$RUNNER_TEMP/log" 2>&1 && { echo "Unexpected successful startup"; exit 1; } || true
           cat "$RUNNER_TEMP/log"
           grep 'storage_path must not contain symlinks' "$RUNNER_TEMP/log"

@@ -29,8 +29,8 @@ jobs:
           docker logs second
           docker stop -t 30 second
           docker rm second
-          test -f "$RUNNER_TEMP/shared/workspaces/first/state/talond.sqlite"
-          test -f "$RUNNER_TEMP/shared/workspaces/second/state/talond.sqlite"
+          sudo test -f "$RUNNER_TEMP/shared/workspaces/first/state/talond.sqlite"
+          sudo test -f "$RUNNER_TEMP/shared/workspaces/second/state/talond.sqlite"
       - name: Broken YAML still leaves management terminal running
         run: |
           set -eu

@@ -248,7 +248,7 @@ const TOOLS = [
   {
     name: 'channel_send',
     description:
-      'Sends a message to a channel on behalf of a persona. Pass `externalChatId` to target a specific chat on the channel (e.g. a Telegram chat_id). When omitted, the tool routes to the schedule thread\'s origin chat if the run is on a persona-created schedule. If neither is available (CLI-created schedules), the tool errors — use `channel_list` to discover available chats or `channel_broadcast` to fan out.',
+      'Sends text and optional file attachments to a channel. For a user request received in Telegram, set channelId to the current Telegram channel name and OMIT externalChatId: channel.send automatically uses the current conversation thread chat ID. Never call channel_list or channel_broadcast to reply to a single chat. To send a file from ha-files Videoclipper or Transcripts: first call copy_to_export with source and exact path, obtain its fresh signed download URL, and immediately pass that URL in attachments [{url,filename,mimeType}]. list_exports only lists paths and does not provide a downloadable attachment URL. Do not expose signed URLs in chat. For CLI-created schedules without an origin chat, specify a verified externalChatId or deliberately use channel_broadcast.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -267,13 +267,13 @@ const TOOLS = [
         externalChatId: {
           type: 'string' as const,
           description:
-            'Optional explicit recipient chat id on the target channel (e.g. Telegram chat_id, Slack channel id). Required for CLI-created scheduled tasks that have no originExternalId.',
+            'Optional explicit recipient chat ID for cross-chat sends or CLI-created scheduled tasks. Omit when replying within the current Telegram conversation: channel_send resolves the current thread automatically. Never guess IDs.',
         },
         attachments: {
           type: 'array' as const,
           maxItems: 10,
           description:
-            'Optional files to attach. Use short-lived download URLs returned by trusted tools such as ha-files copy_to_export; Talon fetches the bytes on the host before sending.',
+            'Files to attach. For ha-files, call copy_to_export for the source and exact path immediately before channel_send, use the returned signed URL (not a list_exports path), set filename and mimeType (video/mp4 for MP4). The host fetches bytes without showing the signed URL to the user.',
           items: {
             type: 'object' as const,
             properties: {

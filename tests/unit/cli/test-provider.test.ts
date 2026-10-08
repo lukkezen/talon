@@ -199,6 +199,33 @@ process.exit(0);
 }
 
 describe('testProvider() Codex smoke branch', () => {
+  it('closes stdin for a Codex process that needs EOF before completing', async () => {
+    const fakeCli = join(testDir, 'codex-wait-for-eof');
+    writeFileSync(fakeCli, `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  console.log('codex 0.159.0');
+  process.exit(0);
+}
+const outputPath = args[args.indexOf('-o') + 1];
+process.stdin.resume();
+process.stdin.on('end', () => {
+  fs.writeFileSync(outputPath, 'hello', 'utf8');
+  console.log(JSON.stringify({ type: 'thread.started', thread_id: 'test-thread' }));
+  console.log(JSON.stringify({ type: 'turn.completed' }));
+});
+`, { mode: 0o755 });
+    const configPath = writeConfig('codex-smoke', fakeCli);
+    const result = await testProvider({ name: 'codex-smoke', configPath });
+
+    expect(result.error).toBeNull();
+    expect(result.jsonValid).toBe(true);
+    expect(result.response).toBe('hello');
+  });
+
+
   it('loads Codex credentials from CODEX_HOME instead of HOME', async () => {
     const customCodexHome = join(testDir, 'persistent-codex-home');
     mkdirSync(customCodexHome, { recursive: true });

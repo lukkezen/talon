@@ -27,6 +27,6 @@ jobs:
           sleep 8
           docker logs talon-ha-smoke
           test "$(docker inspect -f '{{.State.Running}}' talon-ha-smoke)" = "true"
-          docker top talon-ha-smoke -eo user,args | grep '^talond ' | grep '/opt/talond/dist/index.js'
+          docker top talon-ha-smoke | grep '^talond ' | grep '/opt/talond/dist/index.js'
           docker stop -t 30 talon-ha-smoke
           docker rm talon-ha-smoke

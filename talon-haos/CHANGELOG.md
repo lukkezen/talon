@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- Keep Codex CLI authentication in the add-on's persistent storage across restarts by setting `CODEX_HOME` for the daemon and terminal.
+
 ## 1.0.1
 
 - Restore the `instance` workspace selector in Home Assistant add-on settings.

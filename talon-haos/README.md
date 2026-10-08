@@ -17,8 +17,11 @@ and configure your OpenAI API key. Telegram settings are optional.
 
 The default storage root is `/data/talon`. The optional `storage_path` accepts
 another absolute path below private `/data`, such as `/data/assistant`.
-The daemon state is stored in `<storage_path>/state` and the default workspace
-in `<storage_path>/workspaces/default`.
+The daemon state is stored in `<storage_path>/state`. The `instance` setting
+selects a workspace by name under `<storage_path>/workspaces/`. Leave it empty
+to use `default`, or enter the name of an existing workspace to reuse it.
+For example, `instance: D66` selects `/data/talon/workspaces/D66` with the
+default storage location.
 
 Each installation runs one daemon. A chosen storage path does not share files
 with other add-ons or automatically start multiple instances.

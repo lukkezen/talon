@@ -114,7 +114,7 @@ export class ChannelSendHandler {
     private readonly deps: {
       channelRegistry: ChannelRegistry;
       threadRepository: ThreadRepository;
-      channelRepository?: Pick<ChannelRepository, 'findByName'>;
+      channelRepository?: Pick<ChannelRepository, 'findByName' | 'findById'>;
       messageRepository?: Pick<MessageRepository, 'insert'>;
       /**
        * When provided, outbound persistence is gated on the current
@@ -156,7 +156,8 @@ export class ChannelSendHandler {
    */
   async execute(args: ChannelSendArgs, context: ToolExecutionContext): Promise<ToolCallResult> {
     const requestId = context.requestId ?? 'unknown';
-    const { channelId, content, attachments } = args;
+    let { channelId } = args;
+    const { content, attachments } = args;
 
     this.deps.logger.info(
       { requestId, runId: context.runId, threadId: context.threadId, personaId: context.personaId, channelId },
@@ -174,6 +175,19 @@ export class ChannelSendHandler {
       const error = new ToolError('channel.send: content is required and must be a non-empty string');
       this.deps.logger.warn({ requestId }, error.message);
       return { requestId, tool: 'channel.send', status: 'error', error: error.message };
+    }
+
+    // Resolve the provider-type alias only to the channel owning this inbound
+    // thread. Never guess a destination for cross-chat or scheduled sends.
+    if (channelId === 'telegram' && !args.externalChatId && this.deps.channelRepository) {
+      const origin = this.deps.threadRepository.findById(context.threadId);
+      if (origin.isOk() && origin.value && !origin.value.external_id.startsWith('schedule:')) {
+        const currentChannel = this.deps.channelRepository.findById(origin.value.channel_id);
+        if (currentChannel.isOk() && currentChannel.value?.type === 'telegram' &&
+            this.deps.channelRegistry.get(currentChannel.value.name)) {
+          channelId = currentChannel.value.name;
+        }
+      }
     }
 
     // Look up the connector

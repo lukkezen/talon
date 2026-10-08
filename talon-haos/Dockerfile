@@ -16,6 +16,8 @@ RUN curl -fsSL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_
 # Apply Talon channel and MCP compatibility modules from a reviewed source revision.
 # The upstream base image follows latest; check compatibility on each rebuild.
 ARG TALON_SOURCE_REF=6eba57c713c07aabdcf0884afc532307a0c306ae
+# Codex fixes are sourced from a reviewed immutable commit in this fork.
+ARG TALON_CODEX_SOURCE_REF=0537ceaff94f079666f64fbf1623542cccdb2f4a
 COPY install-runtime-overlays.cjs /opt/install-runtime-overlays.cjs
 RUN set -eu; \
     for module in \
@@ -27,12 +29,19 @@ RUN set -eu; \
       curl -fsSL "https://raw.githubusercontent.com/lukkezen/talon/$TALON_SOURCE_REF/src/$module.ts" \
         -o "/tmp/talon-overlay/$module.ts"; \
     done; \
+    for module in providers/codex-cli-provider cli/commands/test-provider; do \
+      mkdir -p "/tmp/talon-overlay/$(dirname "$module")"; \
+      curl -fsSL "https://raw.githubusercontent.com/lukkezen/talon/$TALON_CODEX_SOURCE_REF/src/$module.ts" \
+        -o "/tmp/talon-overlay/$module.ts"; \
+    done; \
     node /opt/install-runtime-overlays.cjs /tmp/talon-overlay /opt/talond/dist; \
     for module in \
       tools/host-tools/channel-send \
       tools/host-tools-mcp-server \
       channels/connectors/telegram/telegram-connector \
-      providers/openai-compatible/agent-cli/responses-api; do \
+      providers/openai-compatible/agent-cli/responses-api \
+      providers/codex-cli-provider \
+      cli/commands/test-provider; do \
       node --check "/opt/talond/dist/$module.js"; \
     done
 

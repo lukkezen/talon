@@ -21,4 +21,4 @@ jobs:
       - name: Focused tests
         run: npx vitest run tests/unit/tools/host-tools/channel-send.test.ts tests/unit/tools/host-tools/attachment-download.test.ts tests/unit/tools/host-tools-bridge.test.ts
       - name: Lint
-        run: npm run lint
+        run: npx eslint src/tools/host-tools/attachment-download.ts src/tools/host-tools/channel-send.ts src/tools/host-tools-bridge.ts

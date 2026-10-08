@@ -93,7 +93,7 @@ function makeConnector(sendResult: ReturnType<typeof ok | typeof err> = ok(undef
 
 function makeRegistry(connector?: ChannelConnector): ChannelRegistry {
   return {
-    get: vi.fn().mockReturnValue(connector),
+    get: vi.fn((name: string) => connector?.name === name ? connector : undefined),
     register: vi.fn(),
     unregister: vi.fn(),
     getByType: vi.fn(),

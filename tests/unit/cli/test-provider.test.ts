@@ -14,6 +14,7 @@ import { testProvider } from '../../../src/cli/commands/test-provider.js';
 let testDir: string;
 let operatorHome: string;
 let originalHome: string | undefined;
+let originalCodexHome: string | undefined;
 
 beforeEach(() => {
   testDir = mkdtempSync(join(tmpdir(), 'talon-test-provider-cli-'));
@@ -21,6 +22,8 @@ beforeEach(() => {
   mkdirSync(join(operatorHome, '.codex'), { recursive: true });
   writeFileSync(join(operatorHome, '.codex', 'auth.json'), '{"access_token":"operator-token"}', 'utf8');
   originalHome = process.env.HOME;
+  originalCodexHome = process.env.CODEX_HOME;
+  delete process.env.CODEX_HOME;
   process.env.HOME = operatorHome;
 });
 
@@ -35,6 +38,12 @@ afterEach(() => {
     delete process.env.HOME;
   } else {
     process.env.HOME = originalHome;
+  }
+
+  if (originalCodexHome === undefined) {
+    delete process.env.CODEX_HOME;
+  } else {
+    process.env.CODEX_HOME = originalCodexHome;
   }
 
   rmSync(testDir, { recursive: true, force: true });
@@ -190,6 +199,22 @@ process.exit(0);
 }
 
 describe('testProvider() Codex smoke branch', () => {
+  it('loads Codex credentials from CODEX_HOME instead of HOME', async () => {
+    const customCodexHome = join(testDir, 'persistent-codex-home');
+    mkdirSync(customCodexHome, { recursive: true });
+    writeFileSync(join(customCodexHome, 'auth.json'), '{"access_token":"operator-token"}', 'utf8');
+    rmSync(join(operatorHome, '.codex', 'auth.json'));
+    process.env.CODEX_HOME = customCodexHome;
+
+    const fakeCli = writeFakeExecutable('codex-persistent-home');
+    const configPath = writeConfig('codex-smoke', fakeCli);
+    const result = await testProvider({ name: 'codex-smoke', configPath });
+
+    expect(result.error).toBeNull();
+    expect(result.response).toBe('hello');
+    expect(result.jsonValid).toBe(true);
+  });
+
   it('recognizes Codex by provider name and runs Codex smoke flow', async () => {
     const fakeCli = writeFakeExecutable('provider-cli');
     const configPath = writeConfig('codex-smoke', fakeCli);

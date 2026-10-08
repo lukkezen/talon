@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1
+
+- Packages the fork's attachment tool schema, download handler, and Telegram video uploader in the Home Assistant image.
+- Pins the upstream image digest and verifies the three source modules during image build.
+- Preserves private workspace configuration and existing capability defaults.
+
 ## 0.7.3
 
 - Fixes embedded `talonctl status` and `talonctl reload` using the actual upstream IPC behavior.

@@ -165,3 +165,7 @@ channels:
 - Each Telegram chat maps to one Talon thread
 - Markdown formatting is auto-converted to Telegram's MarkdownV2
 - Typing indicator is shown while the agent processes
+
+## Optional file delivery
+
+When the user requests file delivery, check that the runtime supports the `channel_send` attachment schema. Home Assistant wrapper 0.8.1 packages that support. Add `channel.send:<configured-channel-name>` to the intended persona only when authorized; preserve other capabilities. This also exposes channel discovery and broadcast tools, not a per-chat ACL. Use a trusted export URL as an attachment and omit `externalChatId` for the current chat. Verify one small clip and report success only after the tool succeeds. See `talon-haos/DOCS.md`.

@@ -3270,3 +3270,7 @@ The current implementation covers:
 ## License
 
 [MIT](LICENSE)
+
+## Home Assistant video delivery
+
+The [Home Assistant wrapper](talon-haos/DOCS.md) packages this fork's attachment support from version 0.8.1. File delivery requires an explicit `channel.send:<channel-name>` persona capability and a downloadable export URL. Existing permissions and private workspaces are preserved.

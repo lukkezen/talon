@@ -1,5 +1,5 @@
 name: Talon
-version: "0.8.0"
+version: "0.8.1"
 slug: talon
 description: Run Talon and its management CLI in one isolated Home Assistant app.
 url: https://github.com/lukkezen/talon

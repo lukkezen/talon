@@ -103,6 +103,8 @@ export OPENAI_API_KEY
 export TELEGRAM_BOT_TOKEN
 export TALON_WORKSPACE="$WORKSPACE"
 export TALOND_CONFIG_PATH="$CONFIG_FILE"
+export CODEX_HOME="$BASE/codex-home"
+mkdir -p "$CODEX_HOME"
 export TALON_PID_FILE="$STATE_DIR/talond.pid"
 export PATH="/usr/local/bin:/opt/talond/node_modules/.bin:$PATH"
 
@@ -258,6 +260,7 @@ cat >/home/talond/.bashrc <<EOF
 cd "$WORKSPACE"
 export TALON_WORKSPACE="$WORKSPACE"
 export TALOND_CONFIG_PATH="$CONFIG_FILE"
+export CODEX_HOME="$BASE/codex-home"
 export OPENAI_API_KEY="\${OPENAI_API_KEY}"
 export TELEGRAM_BOT_TOKEN="\${TELEGRAM_BOT_TOKEN}"
 export PATH="/usr/local/bin:/opt/talond/node_modules/.bin:\$PATH"

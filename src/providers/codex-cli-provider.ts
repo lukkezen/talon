@@ -364,6 +364,7 @@ export class CodexCliProvider implements AgentProvider {
       stdin: this.composePromptStdin(input.systemPrompt, input.prompt),
       env: {
         HOME: homeDir,
+        CODEX_HOME: join(homeDir, '.codex'),
         ...seedResult.value.configEnv,
       },
       cwd: input.cwd,
@@ -460,6 +461,7 @@ export class CodexCliProvider implements AgentProvider {
       stdin: this.composePromptStdin(input.systemPrompt, input.prompt),
       env: {
         HOME: homeDir,
+        CODEX_HOME: join(homeDir, '.codex'),
         ...seedResult.value.configEnv,
         ...(input.traceparent ? { TALOND_TRACEPARENT: input.traceparent } : {}),
       },

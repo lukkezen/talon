@@ -19,3 +19,14 @@ jobs:
 
       - name: Verify downloaded ttyd candidate hash
         run: docker run --rm --entrypoint sha256sum talon-haos:test /usr/local/bin/ttyd
+
+      - name: Smoke test default workspace and non-root daemon
+        run: |
+          echo '{"openai_api_key":"test-key"}' > "$RUNNER_TEMP/talon-options.json"
+          docker run -d --name talon-ha-smoke -v "$RUNNER_TEMP/talon-options.json:/data/options.json:ro" talon-haos:test
+          sleep 8
+          docker logs talon-ha-smoke
+          test "$(docker inspect -f '{{.State.Running}}' talon-ha-smoke)" = "true"
+          docker exec talon-ha-smoke sh -c 'ps -eo user,args | grep -E "[n]ode /opt/talond/dist/index.js" | grep talond'
+          docker stop -t 30 talon-ha-smoke
+          docker rm talon-ha-smoke

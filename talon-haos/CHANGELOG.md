@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4
+
+- Package the patched Codex CLI provider and `talonctl test-provider` modules in the Home Assistant add-on image, rather than relying on the upstream runtime image to include these fixes.
+- Fetch both Codex modules from a pinned fork commit while retaining the existing compatibility overlays.
+- Verify the overlaid JavaScript modules during the Docker build.
+
 ## 1.0.3
 
 - Respect `CODEX_HOME` when locating Codex CLI authentication for provider sessions and provider tests.

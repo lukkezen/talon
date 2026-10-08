@@ -1,4 +1,4 @@
-// Install compatibility modules from a single immutable Talon source revision.
+// Install compatibility modules from immutable, Dockerfile-pinned Talon source revisions.
 const fs = require('node:fs');
 const path = require('node:path');
 const { stripTypeScriptTypes } = require('node:module');

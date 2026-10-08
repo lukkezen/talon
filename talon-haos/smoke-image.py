@@ -7,9 +7,11 @@ Requires a Linux Docker engine and Python 3. No host ports or existing volumes.
 import ast
 import enum
 import json
+import re
 import subprocess
 import sys
 import time
+import textwrap
 from types import SimpleNamespace
 from urllib.request import urlopen
 import uuid
@@ -50,9 +52,12 @@ def supervisor_state(healthcheck):
     url = (f"https://raw.githubusercontent.com/home-assistant/supervisor/"
            f"{SUPERVISOR_REV}/supervisor/apps/app.py")
     with urlopen(url, timeout=30) as response:
-        tree = ast.parse(response.read())
-    app = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "App")
-    method = next(n for n in app.body if isinstance(n, ast.FunctionDef) and n.name == "_derive_state")
+        source = response.read().decode("utf-8")
+    # The rest of upstream uses Python 3.14 syntax; this method works on 3.10+.
+    # Extract its indented block before parsing on the runner's Python 3.12.
+    matches = re.findall(r"(?m)^    def _derive_state\([^\n]*\n(?:[ \t]*\n| {8}[^\n]*\n)*", source)
+    assert len(matches) == 1, "Expected exactly one pinned Supervisor state method"
+    method = ast.parse(textwrap.dedent(matches[0])).body[0]
     method.decorator_list = []
     module = ast.Module(body=[method], type_ignores=[])
     states = enum.Enum("ContainerState", "RUNNING HEALTHY UNHEALTHY STOPPED FAILED UNKNOWN")

@@ -583,6 +583,18 @@ function formatStandardIssues(issues: unknown[]): string {
 }
 
 function schemaToJsonSchema(value: unknown): Record<string, unknown> {
+  // Mastra wraps MCP JSON Schemas in Standard JSON Schema's JsonSchemaWrapper.
+  // Extract the input schema before falling back to an empty object schema.
+  if (isRecord(value) && isRecord(value['~standard'])) {
+    const standard = value['~standard'];
+    if (isRecord(standard.jsonSchema) && typeof standard.jsonSchema.input === 'function') {
+      const schema = (standard.jsonSchema.input as (options: { target: string }) => unknown)(
+        { target: 'draft-07' },
+      );
+      return normalizeJsonSchema(schema);
+    }
+  }
+
   if (isRecord(value) && typeof value.toJSONSchema === 'function') {
     return normalizeJsonSchema((value.toJSONSchema as () => unknown)());
   }

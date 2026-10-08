@@ -99,8 +99,9 @@ function runProcess(
 
     if (input !== undefined && child.stdin) {
       child.stdin.write(input);
-      child.stdin.end();
     }
+    // Codex and other CLIs may wait for stdin EOF even when the prompt is an argument.
+    child.stdin?.end();
   });
 }
 

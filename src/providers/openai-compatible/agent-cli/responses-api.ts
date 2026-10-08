@@ -156,12 +156,40 @@ function mergeReasoningEffort(
 export function buildResponsesTools(
   tools: Record<string, ToolLike>,
 ): Array<Record<string, unknown>> {
-  return Object.entries(tools).map(([name, tool]) => ({
-    type: 'function',
-    name,
-    description: readStringProp(tool, 'description') ?? name,
-    parameters: schemaToJsonSchema(readUnknownProp(tool, 'inputSchema')),
-  }));
+  return Object.entries(tools).map(([name, tool]) => {
+    const rawSchema = readUnknownProp(tool, 'inputSchema');
+    const parameters = schemaToJsonSchema(rawSchema);
+    const properties = isRecord(parameters.properties)
+      ? Object.keys(parameters.properties)
+      : [];
+    const required = Array.isArray(parameters.required)
+      ? parameters.required.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+    const rawKeys = isRecord(rawSchema) ? Object.keys(rawSchema).slice(0, 20) : [];
+    const constructorName =
+      isRecord(rawSchema) &&
+      isRecord((rawSchema as { constructor?: unknown }).constructor) &&
+      typeof (rawSchema as { constructor?: { name?: unknown } }).constructor?.name === 'string'
+        ? String((rawSchema as { constructor: { name: string } }).constructor.name)
+        : undefined;
+    process.stderr.write(
+      JSON.stringify({
+        level: 'debug',
+        msg: 'openai-compatible: tool schema',
+        tool: name,
+        rawSchemaKeys: rawKeys,
+        ...(constructorName ? { rawSchemaConstructor: constructorName } : {}),
+        parameterProperties: properties,
+        required,
+      }) + '\n',
+    );
+    return {
+      type: 'function',
+      name,
+      description: readStringProp(tool, 'description') ?? name,
+      parameters,
+    };
+  });
 }
 
 async function postResponsesRequest(

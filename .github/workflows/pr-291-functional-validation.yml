@@ -1,0 +1,45 @@
+name: PR 291 Functional Fix Validation
+on:
+  push:
+    branches: [test/pr-291-functional-fixes]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh -n talon-haos/run.sh talon-haos/talonctl
+      - run: node --check talon-haos/ingress-proxy.cjs
+      - run: docker build --build-arg BUILD_VERSION=1.0.1 --build-arg BUILD_ARCH=amd64 -t talon-haos:test talon-haos
+      - name: Validate default and named workspace isolation
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/shared"
+          printf '{"openai_api_key":"test-key","instance":"first"}' > "$RUNNER_TEMP/first.json"
+          printf '{"openai_api_key":"test-key","instance":"second"}' > "$RUNNER_TEMP/second.json"
+          docker run -d --name first -v "$RUNNER_TEMP/first.json:/data/options.json:ro" -v "$RUNNER_TEMP/shared:/data/talon" talon-haos:test
+          sleep 8
+          docker logs first
+          docker stop -t 30 first
+          docker rm first
+          docker run -d --name second -v "$RUNNER_TEMP/second.json:/data/options.json:ro" -v "$RUNNER_TEMP/shared:/data/talon" talon-haos:test
+          sleep 8
+          docker logs second
+          docker stop -t 30 second
+          docker rm second
+          test -f "$RUNNER_TEMP/shared/workspaces/first/state/talond.sqlite"
+          test -f "$RUNNER_TEMP/shared/workspaces/second/state/talond.sqlite"
+      - name: Broken YAML still leaves management terminal running
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/recovery/workspaces/default"
+          echo 'broken: [ yaml' > "$RUNNER_TEMP/recovery/workspaces/default/talond.yaml"
+          printf '{"openai_api_key":""}' > "$RUNNER_TEMP/recovery.json"
+          docker run -d --name recovery -v "$RUNNER_TEMP/recovery.json:/data/options.json:ro" -v "$RUNNER_TEMP/recovery:/data/talon" talon-haos:test
+          sleep 8
+          docker logs recovery
+          test "$(docker inspect -f '{{.State.Running}}' recovery)" = true
+          docker stop -t 30 recovery
+          docker rm recovery

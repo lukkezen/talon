@@ -1,4 +1,4 @@
-// Install compatibility modules from a single immutable Talon source revision.
+// Install compatibility modules from immutable, Dockerfile-pinned Talon source revisions.
 const fs = require('node:fs');
 const path = require('node:path');
 const { stripTypeScriptTypes } = require('node:module');
@@ -7,6 +7,8 @@ const modules = [
   'tools/host-tools-mcp-server',
   'channels/connectors/telegram/telegram-connector',
   'providers/openai-compatible/agent-cli/responses-api',
+  'providers/codex-cli-provider',
+  'cli/commands/test-provider',
 ];
 function install(sourceRoot, runtimeRoot) {
   // Transform all modules before touching the runtime.

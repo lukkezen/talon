@@ -1,0 +1,24 @@
+name: Talon
+version: "1.0.1"
+slug: talon
+description: Run Talon with a built-in management terminal.
+arch:
+  - amd64
+startup: application
+boot: auto
+timeout: 60
+init: false
+ingress: true
+ingress_port: 7681
+panel_icon: mdi:console
+map: []
+options:
+  instance: ""
+  storage_path: ""
+  openai_api_key: ""
+  telegram_bot_token: ""
+schema:
+  instance: str
+  storage_path: str
+  openai_api_key: password
+  telegram_bot_token: password

@@ -1,0 +1,33 @@
+name: PR 291 Path Safety
+on:
+  push:
+    branches: [test/pr-291-path-hardening]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh -n talon-haos/run.sh talon-haos/talonctl
+      - run: node --check talon-haos/ingress-proxy.cjs
+      - run: docker build --build-arg BUILD_VERSION=1.0.1 --build-arg BUILD_ARCH=amd64 -t talon-haos:paths talon-haos
+      - name: Normal boot and private workspace
+        run: |
+          printf '{"openai_api_key":"test-key"}' > "$RUNNER_TEMP/options.json"
+          docker run -d --name ha-normal -v "$RUNNER_TEMP/options.json:/data/options.json:ro" talon-haos:paths
+          sleep 9
+          docker logs ha-normal
+          test "$(docker inspect -f '{{.State.Running}}' ha-normal)" = true
+          docker stop -t 30 ha-normal
+          docker rm ha-normal
+      - name: Reject symlink path without writing to target
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/mounted" "$RUNNER_TEMP/private"
+          ln -s /data/escape-target "$RUNNER_TEMP/mounted/link"
+          printf '{"storage_path":"/data/link","openai_api_key":"test-key"}' > "$RUNNER_TEMP/bad.json"
+          docker run --rm --name ha-symlink -v "$RUNNER_TEMP/bad.json:/data/options.json:ro" -v "$RUNNER_TEMP/mounted/link:/data/link" -v "$RUNNER_TEMP/private:/data/escape-target" talon-haos:paths > "$RUNNER_TEMP/log" 2>&1 && { echo "Unexpected successful startup"; exit 1; } || true
+          cat "$RUNNER_TEMP/log"
+          grep 'storage_path must not contain symlinks' "$RUNNER_TEMP/log"

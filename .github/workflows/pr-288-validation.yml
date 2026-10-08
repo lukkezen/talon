@@ -1,0 +1,30 @@
+name: PR 288 Schema Validation
+
+on:
+  push:
+    branches:
+      - test/pr-288-review-fixes
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Compile TypeScript
+        run: npm run build
+      - name: Test PR 288 schema conversion
+        run: npx vitest run tests/openai-compatible-mcp-schema.test.ts
+      - name: Run full test suite
+        run: npm test
+      - name: Lint
+        run: npm run lint

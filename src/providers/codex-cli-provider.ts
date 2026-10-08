@@ -114,7 +114,9 @@ export class CodexCliProvider implements AgentProvider {
   }
 
   private operatorCodexDir(): string {
-    return join(this.runtime.operatorHome ?? homedir(), '.codex');
+    return this.runtime.operatorHome
+      ? join(this.runtime.operatorHome, '.codex')
+      : (process.env.CODEX_HOME || join(homedir(), '.codex'));
   }
 
   private seedCodexHome(

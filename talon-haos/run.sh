@@ -123,9 +123,13 @@ fi
 if [ ! -f "$CONFIG_FILE" ]; then
 
   if [ -z "$OPENAI_API_KEY" ]; then
-    echo "[talon] New workspace requires an OpenAI API key; configure one then restart." >&2
-    # Leave daemon config missing; keep terminal available for recovery.
+    BOOTSTRAP_PROVIDER=codex-cli
+    BOOTSTRAP_MODEL=gpt-5.6
   else
+    BOOTSTRAP_PROVIDER=openai-compatible
+    BOOTSTRAP_MODEL="$OPENAI_MODEL"
+  fi
+  BOOTSTRAP_MODEL_JSON="$(printf '%s' "$BOOTSTRAP_MODEL" | jq -Rs .)"
   echo "[talon] No existing workspace found; bootstrapping $CONFIG_FILE."
   cat > "$CONFIG_FILE" <<EOF
 storage:
@@ -156,8 +160,8 @@ EOF
 
 personas:
   - name: assistant
-    model: $MODEL_JSON
-    provider: openai-compatible
+    model: $BOOTSTRAP_MODEL_JSON
+    provider: $BOOTSTRAP_PROVIDER
     systemPromptFile: $WORKSPACE/personas/assistant/system.md
     skills: []
     subagents: []
@@ -199,35 +203,31 @@ scheduler:
   tickIntervalMs: 5000
 
 agentRunner:
-  defaultProvider: openai-compatible
+  defaultProvider: $BOOTSTRAP_PROVIDER
   providers:
-    openai-compatible:
+    $BOOTSTRAP_PROVIDER:
       enabled: true
-      command: node
+      command: $(if [ "$BOOTSTRAP_PROVIDER" = codex-cli ]; then printf codex; else printf node; fi)
       contextWindowTokens: 256000
       contextManagement:
         enabled: false
-      options:
-        baseUrl: https://api.openai.com/v1
-        defaultModel: $MODEL_JSON
-        providerId: openai
-        apiMode: responses
-        toolOutputCap: 8000
 
 backgroundAgent:
   enabled: false
   maxConcurrent: 1
   defaultTimeoutMinutes: 30
-  defaultProvider: openai-compatible
+  defaultProvider: $BOOTSTRAP_PROVIDER
   providers:
-    openai-compatible:
+    $BOOTSTRAP_PROVIDER:
       enabled: false
-      command: node
+      command: $(if [ "$BOOTSTRAP_PROVIDER" = codex-cli ]; then printf codex; else printf node; fi)
       contextWindowTokens: 256000
-      options:
-        baseUrl: https://api.openai.com/v1
-        defaultModel: $MODEL_JSON
-        providerId: openai
+
+logLevel: info
+dataDir: $STATE_DIR
+EOF
+  if [ "$BOOTSTRAP_PROVIDER" = openai-compatible ]; then
+    cat >> "$CONFIG_FILE" <<EOF
 
 auth:
   mode: api_key
@@ -235,9 +235,6 @@ auth:
     openai:
       apiKey: \${OPENAI_API_KEY}
       baseURL: https://api.openai.com/v1
-
-logLevel: info
-dataDir: $STATE_DIR
 EOF
   fi
 fi

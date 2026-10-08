@@ -167,8 +167,8 @@ export function buildResponsesTools(
       : [];
     const rawKeys = isRecord(rawSchema) ? Object.keys(rawSchema).slice(0, 20) : [];
     const constructorName =
-      isRecord(rawSchema) &&
-      isRecord((rawSchema as { constructor?: unknown }).constructor) &&
+      rawSchema !== null &&
+      typeof rawSchema === 'object' &&
       typeof (rawSchema as { constructor?: { name?: unknown } }).constructor?.name === 'string'
         ? String((rawSchema as { constructor: { name: string } }).constructor.name)
         : undefined;

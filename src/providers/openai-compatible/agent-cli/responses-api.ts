@@ -551,11 +551,8 @@ function schemaToJsonSchema(value: unknown): Record<string, unknown> {
   if (isRecord(value) && isRecord(value._zod)) {
     return normalizeJsonSchema(z.toJSONSchema(value as z.ZodType));
   }
-  if (isRecord(value) && isRecord(value._def)) {
-    // zod/v3 is provided by the same installed Zod package.
-    return normalizeJsonSchema(z.toJSONSchema(value as z.ZodType));
-  }
-
+  // Legacy Zod 3 schemas have _def rather than _zod; leave them to
+  // the safe fallback until they can be converted with the v3 adapter.
   return normalizeJsonSchema(value);
 }
 

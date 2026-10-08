@@ -29,9 +29,9 @@ RUN set -eu; \
 # Apply the fork-only MCP input-schema fix to the pinned upstream runtime.
 # Keep the existing video overlay and private HA configuration unchanged.
 RUN set -eu; \
-    curl -fsSL "https://raw.githubusercontent.com/lukkezen/talon/8ac5a4c735f4eb01a63bbdab048b4e80d415a1f3/src/providers/openai-compatible/agent-cli/responses-api.ts" \
+    curl -fsSL "https://raw.githubusercontent.com/lukkezen/talon/2ba3ee1e149b38113d7d80811c944d3371686395/src/providers/openai-compatible/agent-cli/responses-api.ts" \
       -o /tmp/talon-responses-api.ts; \
-    node -e 'const fs=require("node:fs"); const {stripTypeScriptTypes}=require("node:module"); const source=fs.readFileSync("/tmp/talon-responses-api.ts","utf8"); if (!source.includes("z.toJSONSchema(value as z.ZodType)")) throw new Error("Missing MCP schema fix"); const target="/opt/talond/dist/providers/openai-compatible/agent-cli/responses-api.js"; if (!fs.existsSync(target)) throw new Error("Missing Responses runtime"); fs.writeFileSync(target,stripTypeScriptTypes(source,{mode:"transform"}));'; \
+    node -e 'const fs=require("node:fs"); const {stripTypeScriptTypes}=require("node:module"); const source=fs.readFileSync("/tmp/talon-responses-api.ts","utf8"); if (!source.includes("standard.jsonSchema.input")) throw new Error("Missing MCP schema fix"); const target="/opt/talond/dist/providers/openai-compatible/agent-cli/responses-api.js"; if (!fs.existsSync(target)) throw new Error("Missing Responses runtime"); fs.writeFileSync(target,stripTypeScriptTypes(source,{mode:"transform"}));'; \
     node --check /opt/talond/dist/providers/openai-compatible/agent-cli/responses-api.js
 
 COPY run.sh /run.sh

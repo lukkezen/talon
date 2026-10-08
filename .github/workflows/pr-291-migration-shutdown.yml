@@ -1,0 +1,53 @@
+name: PR 291 Migration and Shutdown
+on:
+  push:
+    branches: [test/pr-291-migration-shutdown]
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: |
+          sh -n talon-haos/run.sh
+          node --check talon-haos/check-config.cjs
+      - name: Build
+        run: docker build --build-arg BUILD_VERSION=1.0.1 --build-arg BUILD_ARCH=amd64 -t talon-haos:integration talon-haos
+      - name: Migration safety checks
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/migration/workspaces/default"
+          printf '{"openai_api_key":""}' > "$RUNNER_TEMP/options.json"
+          cat > "$RUNNER_TEMP/migration/workspaces/default/talond.yaml" <<'EOF'
+          storage:
+            type: sqlite
+            path: /data/talon-old/state/talond.sqlite
+          dataDir: /data/talon-old/state
+          personas:
+            - name: assistant
+              systemPromptFile: /data/talon-old/workspaces/default/personas/assistant/system.md
+          EOF
+          cp "$RUNNER_TEMP/migration/workspaces/default/talond.yaml" "$RUNNER_TEMP/before.yaml"
+          docker run -d --name migration -v "$RUNNER_TEMP/options.json:/data/options.json:ro" -v "$RUNNER_TEMP/migration:/data/talon" talon-haos:integration
+          sleep 6
+          docker logs migration
+          docker logs migration 2>&1 | grep 'Configuration needs repair'
+          test "$(docker inspect -f '{{.State.Running}}' migration)" = true
+          sudo cmp "$RUNNER_TEMP/before.yaml" "$RUNNER_TEMP/migration/workspaces/default/talond.yaml"
+          docker stop -t 25 migration
+          docker rm migration
+      - name: Signal live daemon and confirm clean shutdown
+        run: |
+          set -eu
+          printf '{"openai_api_key":"test-key"}' > "$RUNNER_TEMP/normal.json"
+          docker run -d --name shutdown -v "$RUNNER_TEMP/normal.json:/data/options.json:ro" talon-haos:integration
+          sleep 9
+          docker logs shutdown | grep 'daemon: running'
+          docker stop -t 25 shutdown
+          docker logs shutdown > "$RUNNER_TEMP/shutdown.log" 2>&1
+          cat "$RUNNER_TEMP/shutdown.log" | tail -n 35
+          if grep -qi 'SIGKILL' "$RUNNER_TEMP/shutdown.log"; then exit 1; fi
+          docker rm shutdown

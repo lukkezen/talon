@@ -1,0 +1,40 @@
+name: PR 291 Configuration Ownership
+on:
+  push:
+    branches: [test/pr-291-config-credentials]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh -n talon-haos/run.sh
+      - name: Validate schema and documentation
+        run: |
+          python3 - <<'PY'
+          import yaml
+          with open('talon-haos/config.yaml') as f: c=yaml.safe_load(f)
+          assert set(c['options']) == {'instance','storage_path','openai_api_key','telegram_bot_token'}
+          assert set(c['schema']) == {'instance','storage_path','openai_api_key','telegram_bot_token'}
+          print("PASS: no misleading model/channel HA options")
+          PY
+      - name: Build Home Assistant container
+        run: docker build --build-arg BUILD_VERSION=1.0.1 --build-arg BUILD_ARCH=amd64 -t talon-haos:config ./talon-haos
+      - name: Preserve existing model and Telegram configuration
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/ha-data/workspaces/default"
+          cat > "$RUNNER_TEMP/ha-data/workspaces/default/talond.yaml" <<'EOF'
+          this: [is, intentionally, invalid, yaml
+          # This must remain unchanged during startup.
+          EOF
+          cp "$RUNNER_TEMP/ha-data/workspaces/default/talond.yaml" "$RUNNER_TEMP/config-before.yaml"
+          printf '{"instance":"","storage_path":"","openai_api_key":""}' > "$RUNNER_TEMP/options.json"
+          docker run -d --name talon-config -v "$RUNNER_TEMP/options.json:/data/options.json:ro" -v "$RUNNER_TEMP/ha-data:/data/talon" talon-haos:config
+          sleep 8
+          test "$(docker inspect -f '{{.State.Running}}' talon-config)" = true
+          sudo cmp "$RUNNER_TEMP/config-before.yaml" "$RUNNER_TEMP/ha-data/workspaces/default/talond.yaml"
+          docker stop -t 30 talon-config
+          docker rm talon-config

@@ -65,4 +65,41 @@ workspaces and legacy state must remain authoritative across upgrades.
 - Independent GPT-6-sol review found an overbroad persistence claim; narrowed
   criterion 4 to the actual restart test. Upgrade preservation on user data is
   unverified. Runtime scripts and storage behavior are unchanged.
-- Actual image build/transport tests and live HA validation are still pending.
+- CI [run 37858190197](https://github.com/lukkezen/talon/actions/runs/37858190197)
+  on implementation/test commit `a40758524ce0607f194dd20ba78b268adf043062`:
+  - Criterion 1 passed: built image has no healthcheck; a derived image with
+    `HEALTHCHECK NONE` has `Test: ["NONE"]` while running without `State.Health`.
+    The pinned upstream method returns STARTUP for that image and STARTED for
+    the fixed image. This executes a state method with stub inputs, not Supervisor.
+  - Criterion 2 passed: actual `talon-haos/` build context, linux/amd64 image,
+    version label 1.0.10; built, loaded into Docker, and run successfully.
+    Image ID/config digest:
+    `sha256:8bbfb4597a2cb957fabbb63c8019e2953821e3c1d30071a9ea3f4b8438f9e4fd`.
+    Manifest digest:
+    `sha256:36b2ee7659b63269779eba95726996502a30c3f7739660e7d8dc6d88d8c561d0`.
+    The separate `Dockerfile.source` build also passed. Neither image was published.
+  - Criterion 3 passed: HTTP 200 and interactive tty WebSocket from 172.30.32.2,
+    shell-generated output and `id -un` confirm execution as `talond`. Peer
+    172.30.32.11 was denied on both ports, including spoofed forwarding headers.
+  - Criterion 4 passed within its stated scope: empty options bootstrap Codex CLI
+    and start talond without an API key; YAML content matches its pre-restart
+    value and a SQLite sentinel survives restart. Malformed fixture YAML
+    leaves an interactive recovery terminal. No live Codex account/API call used.
+  - 122 targeted Vitest tests passed (including 32 Codex CLI provider tests),
+    as did all 4 add-on Node tests and shell/JavaScript syntax checks.
+  - The full existing suite: 3507 passed, 68 skipped, 1 failed, across 186 files.
+    Failure: `tests/unit/tools/background-agent.test.ts:186`, expecting expanded
+    `PERPLEXITY_API_KEY` instead of the literal environment reference. The same
+    failure is present in baseline 1.0.9
+    [run 37851868613](https://github.com/lukkezen/talon/actions/runs/37851868613).
+    It was not changed or suppressed by this fix; the overall workflow remains red.
+- The first image build passed but its new smoke harness failed because the
+  runner's Python 3.12 could not parse unrelated Python 3.14 syntax in upstream
+  Supervisor. Extracting the pinned method before parsing fixed the harness;
+  the successful run above includes the correction.
+- Criterion 5 remains unverified: no target HA address/access or deployed
+  Supervisor version was supplied, and no automatic deployment is allowed.
+  Real authenticated HA ingress, target `started` state, and preservation of
+  the user's existing data across an actual upgrade remain operator checks.
+  See `talon-haos/DOCS.md#startup-verification`. Do not describe this as a verified
+  fix on the user's Home Assistant installation.

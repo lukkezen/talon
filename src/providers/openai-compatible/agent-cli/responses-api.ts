@@ -543,13 +543,16 @@ function formatStandardIssues(issues: unknown[]): string {
 
 function schemaToJsonSchema(value: unknown): Record<string, unknown> {
   if (isRecord(value) && typeof value.toJSONSchema === 'function') {
-    const jsonSchema = (value.toJSONSchema as () => unknown)();
-    return normalizeJsonSchema(jsonSchema);
+    return normalizeJsonSchema((value.toJSONSchema as () => unknown)());
   }
 
-  // Mastra exposes MCP input schemas as Zod objects. Zod 4 uses the
-  // module-level converter, not a schema.toJSONSchema() instance method.
+  // MCP/Mastra tools can expose either Zod 4 or legacy Zod 3 schemas.
+  // Zod 4 uses _zod; Zod 3 exposes _def and needs the v3 converter.
   if (isRecord(value) && isRecord(value._zod)) {
+    return normalizeJsonSchema(z.toJSONSchema(value as z.ZodType));
+  }
+  if (isRecord(value) && isRecord(value._def)) {
+    // zod/v3 is provided by the same installed Zod package.
     return normalizeJsonSchema(z.toJSONSchema(value as z.ZodType));
   }
 
@@ -560,18 +563,14 @@ function normalizeJsonSchema(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) {
     return { type: 'object', properties: {}, required: [] };
   }
-
   if (typeof value.type === 'string') {
     const rest: Record<string, unknown> = { ...value };
     delete rest.$schema;
     return rest;
   }
-
-  // An unknown nonempty schema must never silently become a zero-argument
-  // tool: that makes required MCP arguments invisible to the model.
-  if (Object.keys(value).length > 0) {
-    throw new Error('Unsupported tool input schema; refusing to expose an empty schema');
-  }
+  // Avoid crashing the entire message queue for an unsupported tool. Such a
+  // tool remains visible with an empty schema, while supported Zod/JSON
+  // schemas keep their required arguments.
   return { type: 'object', properties: {}, required: [] };
 }
 

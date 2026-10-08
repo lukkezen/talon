@@ -1,0 +1,26 @@
+# Experimental source-built Home Assistant image.
+# Builds the exact checked-out integration branch; no runtime overlays or floating Talon image.
+# Not used by Home Assistant config.yaml until validation and explicit promotion.
+FROM node:24-bookworm-slim AS builder
+WORKDIR /opt/talond
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ git ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build && npm prune --omit=dev
+
+FROM node:24-bookworm-slim
+ARG BUILD_VERSION=integration
+ARG BUILD_ARCH=amd64
+LABEL io.hass.version="${BUILD_VERSION}" io.hass.type="app" io.hass.arch="${BUILD_ARCH}"
+RUN apt-get update && apt-get install -y --no-install-recommends tini curl jq bash ca-certificates && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 -o /usr/local/bin/ttyd \
+    && chmod 0755 /usr/local/bin/ttyd
+WORKDIR /opt/talond
+COPY --from=builder /opt/talond/package.json ./package.json
+COPY --from=builder /opt/talond/node_modules ./node_modules
+COPY --from=builder /opt/talond/dist ./dist
+COPY talon-haos/run.sh /run.sh
+COPY talon-haos/talonctl /usr/local/bin/talonctl
+RUN chmod 0755 /run.sh /usr/local/bin/talonctl && mkdir -p /data/talon
+ENTRYPOINT ["/usr/bin/tini", "--", "/run.sh"]

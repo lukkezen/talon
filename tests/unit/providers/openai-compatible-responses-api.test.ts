@@ -13,6 +13,55 @@ import {
 } from '../../../src/providers/openai-compatible/agent-cli/responses-api.js';
 
 describe('openai-compatible Responses API runner', () => {
+  it('preserves required MCP parameters instead of exposing an empty schema', () => {
+    const tool = createTool({
+      id: 'copy_to_export',
+      description: 'Export a file',
+      inputSchema: z.object({
+        source: z.string(),
+        path: z.string(),
+        export_name: z.string().optional(),
+      }),
+      execute: async () => 'ok',
+    });
+    const definition = buildResponsesTools({ copy_to_export: tool })[0];
+    expect(definition?.parameters).toMatchObject({
+      type: 'object',
+      properties: {
+        source: { type: 'string' },
+        path: { type: 'string' },
+      },
+      required: ['source', 'path'],
+    });
+  });
+
+  it('preserves nested attachment schema for channel_send', () => {
+    const tool = createTool({
+      id: 'channel_send',
+      description: 'Send message',
+      inputSchema: z.object({
+        channelId: z.string(),
+        content: z.string(),
+        attachments: z.array(z.object({
+          url: z.string(),
+          filename: z.string().optional(),
+          mimeType: z.string().optional(),
+        })).optional(),
+      }),
+      execute: async () => 'ok',
+    });
+    const definition = buildResponsesTools({ channel_send: tool })[0];
+    expect(definition?.parameters).toMatchObject({
+      properties: {
+        attachments: {
+          type: 'array',
+          items: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+        },
+      },
+      required: ['channelId', 'content'],
+    });
+  });
+
   it('uses the executable tool map key as the Responses tool name', () => {
     const tool = createTool({
       id: 'internal_id',

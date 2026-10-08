@@ -1,9 +1,31 @@
 # Changelog
 
+## 1.0.5
+
+- Close subprocess stdin even when the prompt is supplied as a CLI argument, preventing Codex smoke tests from waiting indefinitely for EOF.
+- Add a regression test for Codex processes that require stdin EOF.
+- Update the Home Assistant Docker overlay source pin so the fix is included in the runtime.
+
+## 1.0.4
+
+- Package the patched Codex CLI provider and `talonctl test-provider` modules in the Home Assistant add-on image, rather than relying on the upstream runtime image to include these fixes.
+- Fetch both Codex modules from a pinned fork commit while retaining the existing compatibility overlays.
+- Verify the overlaid JavaScript modules during the Docker build.
+
+## 1.0.3
+
+- Respect `CODEX_HOME` when locating Codex CLI authentication for provider sessions and provider tests.
+- Increase the Codex provider smoke-test timeout from 30 to 120 seconds.
+- Add regression tests for Codex authentication handling.
+
+## 1.0.2
+
+- Keep Codex CLI authentication in the add-on's persistent storage across restarts by setting `CODEX_HOME` for the daemon and terminal.
+
 ## 1.0.1
 
-- Support selecting an existing workspace with the `instance` add-on setting.
-- Document how to reopen named workspaces without moving data.
+- Restore the `instance` workspace selector in Home Assistant add-on settings.
+- Document how to reopen existing named workspaces without moving data.
 
 ## 1.0.0
 

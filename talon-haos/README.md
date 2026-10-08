@@ -20,7 +20,7 @@ another absolute path below private `/data`, such as `/data/assistant`.
 The daemon state is stored in `<storage_path>/state`. The `instance` setting
 selects a workspace by name under `<storage_path>/workspaces/`. Leave it empty
 to use `default`, or enter the name of an existing workspace to reuse it.
-For example, `instance: example` selects `/data/talon/workspaces/example` with the
+For example, `instance: D66` selects `/data/talon/workspaces/D66` with the
 default storage location.
 
 Each installation runs one daemon. A chosen storage path does not share files

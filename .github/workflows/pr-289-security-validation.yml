@@ -1,0 +1,24 @@
+name: PR 289 Security Validation
+on:
+  push:
+    branches: [test/pr-289-security]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Focused tests
+        run: npx vitest run tests/unit/tools/host-tools/channel-send.test.ts tests/unit/tools/host-tools-bridge.test.ts
+      - name: Lint
+        run: npm run lint

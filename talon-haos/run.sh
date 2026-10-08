@@ -65,6 +65,8 @@ export OPENAI_API_KEY
 export TELEGRAM_BOT_TOKEN
 export TALON_WORKSPACE="$WORKSPACE"
 export TALOND_CONFIG_PATH="$CONFIG_FILE"
+export CODEX_HOME="$BASE/codex-home"
+mkdir -p "$CODEX_HOME"
 export PATH="/usr/local/bin:/opt/talond/node_modules/.bin:$PATH"
 
 MODEL_JSON="$(printf '%s' "$OPENAI_MODEL" | jq -Rs .)"
@@ -212,6 +214,7 @@ cat >/root/.bashrc <<EOF
 cd "$WORKSPACE"
 export TALON_WORKSPACE="$WORKSPACE"
 export TALOND_CONFIG_PATH="$CONFIG_FILE"
+export CODEX_HOME="$BASE/codex-home"
 export OPENAI_API_KEY="\${OPENAI_API_KEY}"
 export TELEGRAM_BOT_TOKEN="\${TELEGRAM_BOT_TOKEN}"
 export PATH="/usr/local/bin:/opt/talond/node_modules/.bin:\$PATH"

@@ -1,0 +1,19 @@
+name: PR 289 Partial Delivery Validation
+on:
+  push:
+    branches: [test/pr-289-partial-delivery]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx vitest run tests/unit/channels/connectors/telegram/telegram-connector.test.ts tests/unit/tools/host-tools/channel-send.test.ts
+      - run: npx eslint src/channels/connectors/telegram/telegram-connector.ts src/tools/host-tools/channel-send.ts src/core/errors/error-types.ts

@@ -11,7 +11,7 @@ RUN git clone --depth 1 --branch "$TALON_GIT_REF" https://github.com/lukkezen/ta
  && npm prune --omit=dev
 
 FROM node:24-bookworm-slim
-ARG BUILD_VERSION=1.0.9
+ARG BUILD_VERSION=1.0.10
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="${BUILD_VERSION}" io.hass.type="app" io.hass.arch="${BUILD_ARCH}"
 RUN apt-get update && apt-get install -y --no-install-recommends tini curl jq bash ca-certificates util-linux passwd && rm -rf /var/lib/apt/lists/* \
@@ -29,5 +29,7 @@ COPY talonctl /usr/local/bin/talonctl
 COPY ingress-proxy.cjs /usr/local/lib/talon-ingress-proxy.cjs
 COPY check-config.cjs /usr/local/lib/talon-check-config.cjs
 RUN chmod 0755 /run.sh /usr/local/bin/talonctl && mkdir -p /data/talon
-HEALTHCHECK NONE
+# Intentionally omit HEALTHCHECK. Explicit NONE leaves a nonempty metadata
+# object that Supervisor treats as a check, waiting forever for a health event.
+# The image smoke test also verifies that the base does not inherit a check.
 ENTRYPOINT ["/usr/bin/tini", "--", "/run.sh"]

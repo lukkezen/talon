@@ -39,7 +39,7 @@ jobs:
           sh -n talon-haos/run.sh
           node --check talon-haos/check-config.cjs
           node --check talon-haos/ingress-proxy.cjs
-          node --test talon-haos/ingress-proxy.test.cjs
+          node --test talon-haos/*.test.cjs
   staging-image:
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -68,4 +68,7 @@ jobs:
           file: ./talon-haos/Dockerfile
           platforms: linux/amd64
           push: false
-          tags: talon-haos:1.0.9-check
+          load: true
+          tags: talon-haos:1.0.10-check
+      - name: Verify actual image startup and ingress transport (no deployment)
+        run: python3 talon-haos/smoke-image.py talon-haos:1.0.10-check

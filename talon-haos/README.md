@@ -12,8 +12,9 @@ Run Talon in Home Assistant with a built-in management terminal.
 
 ## Installation
 
-Add this repository to the Home Assistant add-on store, install **Talon**,
-and configure an OpenAI API key if creating a new default workspace.
+Add this repository to the Home Assistant add-on store and install **Talon**.
+A new workspace defaults to Codex CLI when no OpenAI API key is supplied;
+provider login is separate from opening the management terminal.
 For existing workspaces, the existing `talond.yaml` is authoritative, including
 model, channel and recipient settings. Secret API keys and bot tokens may stay
 in Home Assistant's password settings and be referenced as environment variables. Configure channels using the private terminal.

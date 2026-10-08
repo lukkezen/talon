@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5
+
+- Close subprocess stdin even when the prompt is supplied as a CLI argument, preventing Codex smoke tests from waiting indefinitely for EOF.
+- Add a regression test for Codex processes that require stdin EOF.
+- Update the Home Assistant Docker overlay source pin so the fix is included in the runtime.
+
 ## 1.0.4
 
 - Package the patched Codex CLI provider and `talonctl test-provider` modules in the Home Assistant add-on image, rather than relying on the upstream runtime image to include these fixes.

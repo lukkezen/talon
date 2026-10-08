@@ -260,15 +260,26 @@ export class ChannelSendHandler {
     // synthetic `schedule:<persona>:<channel>` fallback because it isn't a
     // valid provider-side chat id and the connector would reject it with
     // "chat not found" (the silent-failure mode this branch fixes).
+    // An empty optional ID is not an explicit destination. Models sometimes
+    // emit externalChatId: "" when replying to the current conversation;
+    // nullish coalescing would incorrectly select that empty value.
+    const explicitChatId =
+      typeof args.externalChatId === 'string' && args.externalChatId.trim()
+        ? args.externalChatId.trim()
+        : null;
+    const scheduleOriginId =
+      typeof originExternalId === 'string' && originExternalId.trim()
+        ? originExternalId.trim()
+        : null;
     const externalThreadId =
-      args.externalChatId ?? originExternalId ?? (isSyntheticFallback ? null : fallbackExternalId);
+      explicitChatId ?? scheduleOriginId ?? (isSyntheticFallback ? null : fallbackExternalId);
     if (!externalThreadId) {
       const msg =
         'channel.send: no recipient chat id. This run is on a schedule thread without an originExternalId (likely created from the CLI). ' +
         'Pass `externalChatId` explicitly, or use `channel.list` to discover available chats and `channel.broadcast` to fan out to all bound chats.';
       this.deps.logger.warn(
         { requestId, threadId: context.threadId, channelId, threadExternalId: fallbackExternalId },
-        'channel.send: refusing to deliver to synthetic schedule-thread external_id',
+        'channel.send: missing valid recipient chat id',
       );
       return { requestId, tool: 'channel.send', status: 'error', error: msg };
     }

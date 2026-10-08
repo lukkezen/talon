@@ -10,8 +10,13 @@ describe('current Telegram channel routing', () => {
     expect(channelSend).toContain("currentChannel.value?.type === 'telegram'");
     expect(channelSend).toContain('channelId = currentChannel.value.name;');
   });
+  it('treats a blank model-provided chat ID as absent', () => {
+    expect(channelSend).toContain("args.externalChatId.trim()");
+    expect(channelSend).toContain('explicitChatId ?? scheduleOriginId ??');
+    expect(channelSend).toContain('isSyntheticFallback ? null : fallbackExternalId');
+  });
   it('retains the existing explicit recipient and scheduled origin rules', () => {
-    expect(channelSend).toContain('args.externalChatId ?? originExternalId');
+    expect(channelSend).toContain('explicitChatId ?? scheduleOriginId');
     expect(channelSend).toContain('channel.send: no recipient chat id');
   });
 });

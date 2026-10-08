@@ -3270,3 +3270,7 @@ The current implementation covers:
 ## License
 
 [MIT](LICENSE)
+
+## Home Assistant integration
+
+A [Home Assistant add-on](talon-haos/README.md) provides private storage and an integrated management terminal.

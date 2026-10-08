@@ -21,7 +21,7 @@ RUN set -eu; \
       mkdir -p "/tmp/talon-video/$(dirname "$module")"; \
       ref="8ad2cdeb997a3978aff2389839175ab3158cdb65"; \
       if [ "$module" = "tools/host-tools-mcp-server" ]; then ref="8505b16d143a695617d0315288eee11190a96d9e"; fi; \
-      if [ "$module" = "tools/host-tools/channel-send" ]; then ref="a22eb59420c50756803c1a3c3aa3a41a5b4f083e"; fi; \
+      if [ "$module" = "tools/host-tools/channel-send" ]; then ref="0df00eac3dfba904882d8a6a852fb553a2242495"; fi; \
       curl -fsSL "https://raw.githubusercontent.com/lukkezen/talon/$ref/src/$module.ts" -o "/tmp/talon-video/$module.ts"; \
     done; \
     node /opt/install-video-support.cjs /tmp/talon-video /opt/talond/dist; \

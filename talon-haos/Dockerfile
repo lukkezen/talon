@@ -19,7 +19,9 @@ COPY install-video-support.cjs /opt/install-video-support.cjs
 RUN set -eu; \
     for module in tools/host-tools/channel-send tools/host-tools-mcp-server channels/connectors/telegram/telegram-connector; do \
       mkdir -p "/tmp/talon-video/$(dirname "$module")"; \
-      curl -fsSL "https://raw.githubusercontent.com/lukkezen/talon/8ad2cdeb997a3978aff2389839175ab3158cdb65/src/$module.ts" -o "/tmp/talon-video/$module.ts"; \
+      ref="8ad2cdeb997a3978aff2389839175ab3158cdb65"; \
+      if [ "$module" = "tools/host-tools-mcp-server" ]; then ref="8505b16d143a695617d0315288eee11190a96d9e"; fi; \
+      curl -fsSL "https://raw.githubusercontent.com/lukkezen/talon/$ref/src/$module.ts" -o "/tmp/talon-video/$module.ts"; \
     done; \
     node /opt/install-video-support.cjs /tmp/talon-video /opt/talond/dist; \
     node --check /opt/talond/dist/tools/host-tools/channel-send.js; \

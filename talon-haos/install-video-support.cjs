@@ -5,7 +5,7 @@ const { createHash } = require('node:crypto');
 const { stripTypeScriptTypes } = require('node:module');
 const hashes = {
   "tools/host-tools/channel-send.ts": "b05d03609152831058aa712368e3a19ef751ab16dd56876e006e9447a09e4e5a",
-  "tools/host-tools-mcp-server.ts": "001303440e8e2683f9d3e947396edb13f9cad0e6179314f8231abbbbe00fb665",
+  "tools/host-tools-mcp-server.ts": "e6c651076c077678412791cdd437adc9a41efca83a20af818c45a9c7045a10b2",
   "channels/connectors/telegram/telegram-connector.ts": "dd557ae49bf0601104f02d8458ba518a953c05b8afbb934970b212a292b5883d"
 };
 function install(sourceRoot, runtimeRoot) {

@@ -99,6 +99,38 @@ TELEGRAM_BOT_TOKEN="$(jq -r '.telegram_bot_token // ""' "$OPTIONS")"
 TELEGRAM_CHAT_ID="$(jq -r '.telegram_chat_id // ""' "$OPTIONS")"
 
 
+# Only explicitly trusted HTTP(S) origins may supply Telegram attachments.
+# The default empty list leaves all attachment downloads blocked.
+# Validate the HA option before exposing both host-tool allowlists.
+ATTACHMENT_ORIGINS="$(node - "$OPTIONS" <<'NODE'
+const fs = require('node:fs');
+const options = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const origins = options.attachment_allowed_origins ?? [];
+if (!Array.isArray(origins) || origins.length > 10) {
+  throw new Error('attachment_allowed_origins must be a list of at most 10 URLs');
+}
+const approved = [];
+for (const entry of origins) {
+  if (typeof entry !== 'string' || entry !== entry.trim() || !entry || /[\s,]/u.test(entry)) {
+    throw new Error('Invalid attachment origin: expected a URL without whitespace or commas');
+  }
+  let url;
+  try { url = new URL(entry); } catch { throw new Error('Invalid attachment origin URL'); }
+  if (!['http:', 'https:'].includes(url.protocol) || !url.hostname ||
+      url.username || url.password || url.pathname !== '/' || url.search || url.hash ||
+      (entry !== url.origin && entry !== url.origin + '/')) {
+    throw new Error('Attachment origins must be HTTP(S) scheme, host and optional port only');
+  }
+  if (!approved.includes(url.origin)) approved.push(url.origin);
+}
+process.stdout.write(approved.join(','));
+NODE
+)"
+# Each listed origin is deliberately trusted, including if it uses a private IP.
+# This is a narrow per-origin exception, not unrestricted private-network access.
+export TALON_ATTACHMENT_ALLOWED_ORIGINS="$ATTACHMENT_ORIGINS"
+export TALON_ATTACHMENT_PRIVATE_ORIGINS="$ATTACHMENT_ORIGINS"
+
 export OPENAI_API_KEY
 export TELEGRAM_BOT_TOKEN
 export TALON_WORKSPACE="$WORKSPACE"

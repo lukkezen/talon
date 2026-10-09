@@ -32,6 +32,35 @@ describe('pinned attachment network transport', () => {
     expect(result.contentType).toBe('application/pdf');
   });
 
+  it('downloads from a hostname when Node requests all DNS results', async () => {
+    // Listen on the dual-stack wildcard address: localhost may resolve to
+    // either ::1 or 127.0.0.1, and the downloader intentionally pins the
+    // first result from its own DNS lookup (verbatim order).
+    const server = createServer((_req, res) => res.end('hostname-ok'));
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const url = new URL(`http://localhost:${address.port}/file`);
+    const result = await downloadAllowedAttachment(url, 1024, 1000, true);
+    expect(result.data.toString()).toBe('hostname-ok');
+  });
+
+  it('cancels a stalled download when the shared send deadline expires', async () => {
+    const url = await serverUrl((_req, res) => {
+      res.write('partial');
+      // Intentionally keep the response open; cancellation must close it.
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30);
+    try {
+      await expect(downloadAllowedAttachment(url, 1024, 5000, true, controller.signal))
+        .rejects.toThrow();
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
   it('refuses redirects without accessing the destination', async () => {
     const url = await serverUrl((_req, res) => {
       res.writeHead(302, { location: 'http://127.0.0.1:1/secret' });

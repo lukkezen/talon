@@ -33,7 +33,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Updated PRs and Codex regression suite
-        run: npx vitest run tests/openai-compatible-mcp-schema.test.ts tests/unit/channels/connectors/telegram/telegram-connector.test.ts tests/unit/tools/host-tools/channel-send.test.ts tests/unit/tools/host-tools/attachment-download.test.ts tests/unit/providers/codex-cli-provider.test.ts tests/unit/cli/test-provider.test.ts
+        run: npx vitest run tests/openai-compatible-mcp-schema.test.ts tests/unit/channels/connectors/telegram/telegram-connector.test.ts tests/unit/tools/host-tools/channel-send.test.ts tests/unit/tools/host-tools/attachment-download.test.ts tests/attachment-config.test.ts tests/unit/providers/codex-cli-provider.test.ts tests/unit/cli/test-provider.test.ts
       - name: Validate HAOS configuration scripts
         run: |
           sh -n talon-haos/run.sh

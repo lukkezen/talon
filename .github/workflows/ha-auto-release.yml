@@ -39,6 +39,8 @@ jobs:
           cache: npm
       - name: Verify release script
         run: python3 -m unittest discover -s .github/scripts -p 'test_bump_ha_addon.py'
+      - name: Check Python scripts compile
+        run: python3 -m py_compile talon-haos/smoke-image.py .github/scripts/bump_ha_addon.py
       - name: Install and compile Talon
         run: |
           npm ci

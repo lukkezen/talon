@@ -2,7 +2,7 @@
 # Source commit and add-on version are pinned by the automatic HA release workflow.
 # The release commit is not itself used as the source to avoid circular references.
 FROM node:24-bookworm-slim AS builder
-ARG TALON_GIT_REF=dfdba767b03d0894718554992447334a2e7bf3aa
+ARG TALON_GIT_REF=ef0f4f2978c2b5c95b8f368a0a8362bd1b5babbc
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ git ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/talond
 RUN git init . \
@@ -14,7 +14,7 @@ RUN git init . \
  && npm prune --omit=dev
 
 FROM node:24-bookworm-slim
-ARG BUILD_VERSION=1.0.12
+ARG BUILD_VERSION=1.0.13
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="${BUILD_VERSION}" io.hass.type="app" io.hass.arch="${BUILD_ARCH}"
 RUN apt-get update && apt-get install -y --no-install-recommends tini curl jq bash ca-certificates util-linux passwd && rm -rf /var/lib/apt/lists/* \

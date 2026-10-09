@@ -1,5 +1,5 @@
 name: Talon
-version: "1.0.12"
+version: "1.0.13"
 slug: talon
 description: Source-built Talon with Codex CLI and a management terminal.
 arch:

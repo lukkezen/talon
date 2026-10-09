@@ -1,11 +1,14 @@
 # Home Assistant builds add-ons with talon-haos/ as the Docker context.
-# Fetch the exact integration branch so Talon's source is available to build.
-# NOTE: for production releases, pin a reviewed commit or release tag.
+# Source commit and add-on version are pinned by the automatic HA release workflow.
+# The release commit is not itself used as the source to avoid circular references.
 FROM node:24-bookworm-slim AS builder
-ARG TALON_GIT_REF=integration/test-release-2026-10-08
+ARG TALON_GIT_REF=c8ac8d38ed55ad1c0955055f1d6a8b412e4976ae
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ git ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/talond
-RUN git clone --depth 1 --branch "$TALON_GIT_REF" https://github.com/lukkezen/talon.git . \
+RUN git init . \
+ && git remote add origin https://github.com/lukkezen/talon.git \
+ && git fetch --depth 1 origin "$TALON_GIT_REF" \
+ && git checkout --detach FETCH_HEAD \
  && npm ci \
  && npm run build \
  && npm prune --omit=dev

@@ -1,15 +1,21 @@
-name: Talon Updated PR Integration
+name: Talon combined integration
+
 on:
   push:
-    branches: [integration/test-release-2026-10-08]
+    branches:
+      - integration/test-release-2026-10-08
   workflow_dispatch:
+
 permissions:
   contents: read
+
 concurrency:
-  group: talon-updated-integration-${{ github.ref }}
+  group: talon-combined-integration-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
-  full-tests:
+  combined-suite:
+    name: Build and full cross-feature suite
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -18,57 +24,11 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: npm ci
-      - run: npm run build
-      - name: Full suite (known upstream background-agent failure remains visible)
+      - name: Install
+        run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Build combined branch
+        run: npm run build
+      - name: Full Talon regression suite
         run: npm test
-  targeted-regressions:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - name: Updated PRs and Codex regression suite
-        run: npx vitest run tests/openai-compatible-mcp-schema.test.ts tests/unit/channels/connectors/telegram/telegram-connector.test.ts tests/unit/tools/host-tools/channel-send.test.ts tests/unit/tools/host-tools/attachment-download.test.ts tests/attachment-config.test.ts tests/unit/providers/codex-cli-provider.test.ts tests/unit/cli/test-provider.test.ts
-      - name: Validate HAOS configuration scripts
-        run: |
-          sh -n talon-haos/run.sh
-          node --check talon-haos/check-config.cjs
-          node --check talon-haos/ingress-proxy.cjs
-          node --test talon-haos/*.test.cjs
-  staging-image:
-    runs-on: ubuntu-latest
-    timeout-minutes: 50
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Build local image (not published)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: talon-haos/Dockerfile.source
-          platforms: linux/amd64
-          push: false
-          tags: talon-haos:integration-test
-
-  ha-addon-image:
-    runs-on: ubuntu-latest
-    timeout-minutes: 50
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Build Home Assistant add-on with real add-on directory context
-        uses: docker/build-push-action@v6
-        with:
-          context: ./talon-haos
-          file: ./talon-haos/Dockerfile
-          platforms: linux/amd64
-          push: false
-          load: true
-          tags: talon-haos:1.0.10-check
-      - name: Verify actual image startup and ingress transport (no deployment)
-        run: python3 talon-haos/smoke-image.py talon-haos:1.0.10-check

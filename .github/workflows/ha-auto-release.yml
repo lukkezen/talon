@@ -1,0 +1,61 @@
+name: Publish Home Assistant add-on update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'talon-haos/**'
+      - 'config/**'
+      - 'templates/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/scripts/**'
+      - '.github/workflows/ha-auto-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ha-addon-release-main
+  cancel-in-progress: false
+
+jobs:
+  validate-and-publish:
+    name: Test and publish next HA add-on version
+    # The release metadata is committed with GITHUB_TOKEN, so GitHub does
+    # not recursively trigger another push workflow for that commit.
+    if: "!startsWith(github.event.head_commit.message, 'chore(ha): automatic add-on release')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify release script
+        run: python3 -m unittest discover -s .github/scripts -p 'test_bump_ha_addon.py'
+      - name: Install and compile Talon
+        run: |
+          npm ci
+          npm run build
+      - name: Full Talon regression suite
+        run: npm test
+      - name: Prepare new add-on version pinned to this code commit
+        run: python3 .github/scripts/bump_ha_addon.py --source-sha "$GITHUB_SHA"
+      - name: Build add-on Docker image
+        run: docker build -f talon-haos/Dockerfile -t talon-haos:auto-release talon-haos
+      - name: Verify actual image startup
+        run: python3 talon-haos/smoke-image.py talon-haos:auto-release
+      - name: Commit new version for Home Assistant update discovery
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add talon-haos/config.yaml talon-haos/Dockerfile
+          git diff --cached --check
+          git commit -m "chore(ha): automatic add-on release"
+          git push origin HEAD:main

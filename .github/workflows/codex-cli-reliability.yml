@@ -1,0 +1,36 @@
+name: Codex CLI reliability tests
+
+on:
+  push:
+    branches:
+      - fix/codex-cli-reliability
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-cli-reliability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Codex CLI build and regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build
+      - name: Codex CLI regressions
+        run: |
+          npx vitest run \
+            tests/unit/providers/codex-cli-provider.test.ts \
+            tests/unit/cli/test-provider.test.ts

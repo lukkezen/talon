@@ -11,7 +11,7 @@ RUN git clone --depth 1 --branch "$TALON_GIT_REF" https://github.com/lukkezen/ta
  && npm prune --omit=dev
 
 FROM node:24-bookworm-slim
-ARG BUILD_VERSION=1.0.10
+ARG BUILD_VERSION=1.0.11
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="${BUILD_VERSION}" io.hass.type="app" io.hass.arch="${BUILD_ARCH}"
 RUN apt-get update && apt-get install -y --no-install-recommends tini curl jq bash ca-certificates util-linux passwd && rm -rf /var/lib/apt/lists/* \

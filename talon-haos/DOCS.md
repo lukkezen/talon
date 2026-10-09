@@ -98,3 +98,12 @@ Changing `storage_path` selects a different private directory; it never copies o
 ## Shutdown
 
 On a Home Assistant stop or upgrade the launcher sends SIGTERM to the daemon process group and waits for shutdown to finish, with an add-on timeout of 60 seconds. The launcher uses setpriv for the daemon and terminal without runuser session timeouts. The Home Assistant stop signal exits the launcher with code 0 after children have shut down. CI checks the launcher command and shutdown signal/wait handling; the disposable Docker image smoke test additionally verifies a clean daemon shutdown and container exit code 0. A live Supervisor stop still requires operator verification. Outstanding AI calls and queued work can still exceed the allowed shutdown time; they are not guaranteed to finish before Home Assistant terminates the container.
+
+## Updating Codex CLI authentication
+
+Codex CLI supports `CODEX_HOME` as an explicit authentication and configuration
+home. The add-on stores this home in its persistent data directory so that a
+container replacement does not remove a previous Codex login. Talon's provider
+uses this configured source to seed isolated invocation homes. After upgrading,
+verify authentication with your existing Codex login; do not put credentials
+in source control or share authentication logs.

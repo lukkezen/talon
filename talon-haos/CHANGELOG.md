@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.11
+
+- Add an optional, default-empty Home Assistant allowlist for trusted attachment download origins.
+- Validate configured HTTP(S) origins at startup and set both attachment allowlist environment variables.
+- Document private-network exceptions and their security limits.
+
 ## 1.0.10
 
 - Omit disabled Docker healthcheck metadata that can leave Supervisor in startup

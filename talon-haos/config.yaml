@@ -20,4 +20,4 @@ schema:
   instance: str
   storage_path: str
   attachment_allowed_origins:
-    - url
+    - str

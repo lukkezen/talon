@@ -116,6 +116,7 @@ export class ChannelSendHandler {
   constructor(
     private readonly deps: {
       channelRegistry: ChannelRegistry;
+      attachments?: { allowedOrigins: string[]; privateOrigins: string[] };
       threadRepository: ThreadRepository;
       channelRepository?: Pick<ChannelRepository, 'findByName' | 'findById'>;
       messageRepository?: Pick<MessageRepository, 'insert'>;
@@ -203,6 +204,9 @@ export class ChannelSendHandler {
       return { requestId, tool: 'channel.send', status: 'error', error: error.message };
     }
 
+    // Apply one deadline to all downloads and connector sends.
+    const deadlineSignal = attachments?.length ? AbortSignal.timeout(240_000) : undefined;
+
     // Fetch requested attachments on the host. This keeps large file bytes out of
     // the model/MCP transcript while still allowing an MCP server to hand Talon a
     // short-lived download URL.
@@ -223,7 +227,7 @@ export class ChannelSendHandler {
           if (remainingBytes <= 0) {
             throw new Error('attachment batch exceeds total byte limit');
           }
-          const resolved = await this.fetchAttachment(attachment, remainingBytes);
+          const resolved = await this.fetchAttachment(attachment, remainingBytes, deadlineSignal);
           remainingBytes -= resolved.size ?? resolved.data.length;
           resolvedAttachments.push(resolved);
         }
@@ -291,7 +295,9 @@ export class ChannelSendHandler {
       return { requestId, tool: 'channel.send', status: 'error', error: msg };
     }
 
-    const result = await connector.send(externalThreadId, output);
+    const result = deadlineSignal
+      ? await connector.send(externalThreadId, output, deadlineSignal)
+      : await connector.send(externalThreadId, output);
 
     if (result.isErr()) {
       if (result.error instanceof ChannelPartialDeliveryError) {
@@ -344,21 +350,12 @@ export class ChannelSendHandler {
    * This is an initial barrier, not a substitute for DNS/IP pinning.
    */
   private isAttachmentOriginAllowed(url: URL): boolean {
-    const configured = process.env['TALON_ATTACHMENT_ALLOWED_ORIGINS'];
-    if (!configured) return false;
-    return configured.split(',').some((entry) => {
-      try {
-        const candidate = new URL(entry.trim());
-        if (candidate.username || candidate.password || candidate.pathname !== '/' ||
-            candidate.search || candidate.hash) return false;
-        return candidate.origin === url.origin;
-      } catch {
-        return false;
-      }
-    });
+    return (this.deps.attachments?.allowedOrigins ?? []).some(
+      (origin) => new URL(origin).origin === url.origin,
+    );
   }
 
-  private async fetchAttachment(input: ChannelSendAttachmentArg, remainingBytes: number): Promise<Attachment> {
+  private async fetchAttachment(input: ChannelSendAttachmentArg, remainingBytes: number, deadlineSignal?: AbortSignal): Promise<Attachment> {
     if (!input || typeof input.url !== 'string' || input.url.trim() === '') {
       throw new Error('attachment url is required');
     }
@@ -376,11 +373,10 @@ export class ChannelSendHandler {
       throw new Error('attachment origin is not explicitly allowed');
     }
 
-    const privateOrigins = (process.env['TALON_ATTACHMENT_PRIVATE_ORIGINS'] ?? '')
-      .split(',').map((entry) => entry.trim());
+    const privateOrigins = this.deps.attachments?.privateOrigins ?? [];
     const { data, contentType } = await downloadAllowedAttachment(
       url, Math.min(MAX_ATTACHMENT_BYTES, remainingBytes), ATTACHMENT_FETCH_TIMEOUT_MS,
-      privateOrigins.includes(url.origin),
+      privateOrigins.some((origin) => new URL(origin).origin === url.origin), deadlineSignal,
     );
 
     const pathName = decodeURIComponent(url.pathname.split('/').pop() || '');

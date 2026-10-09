@@ -114,9 +114,9 @@ export class CodexCliProvider implements AgentProvider {
   }
 
   private operatorCodexDir(): string {
-    return this.runtime.operatorHome
-      ? join(this.runtime.operatorHome, '.codex')
-      : (process.env.CODEX_HOME || join(homedir(), '.codex'));
+    // CODEX_HOME is the Codex CLI's explicit configuration directory.
+    // Only fall back to Talon's operator home when it is not set.
+    return process.env.CODEX_HOME || join(this.runtime.operatorHome ?? homedir(), '.codex');
   }
 
   private seedCodexHome(

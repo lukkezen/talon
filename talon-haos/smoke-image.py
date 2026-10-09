@@ -129,7 +129,10 @@ try:
     # Match the version declared by this checkout; release builds bump it
     # automatically, so a hardcoded version would reject valid images.
     addon_config = (Path(__file__).resolve().parent / "config.yaml").read_text(encoding="utf-8")
-    versions = re.findall(r'(?m)^version:\\s*"([^"]+)"\\s*
+    version_lines = [line for line in addon_config.splitlines() if line.startswith('version: "')]
+    assert len(version_lines) == 1, "Expected exactly one HA add-on version"
+    expected_version = version_lines[0].split('"')[1]
+    assert metadata["Config"]["Labels"]["io.hass.version"] == expected_version
     assert not metadata["Config"].get("Healthcheck"), metadata["Config"].get("Healthcheck")
     assert supervisor_state(metadata["Config"].get("Healthcheck")) == "STARTED"
     print("PASS fixed image has no healthcheck; upstream state method returns STARTED", flush=True)

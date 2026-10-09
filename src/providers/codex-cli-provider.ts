@@ -114,7 +114,9 @@ export class CodexCliProvider implements AgentProvider {
   }
 
   private operatorCodexDir(): string {
-    return join(this.runtime.operatorHome ?? homedir(), '.codex');
+    return this.runtime.operatorHome
+      ? join(this.runtime.operatorHome, '.codex')
+      : (process.env.CODEX_HOME || join(homedir(), '.codex'));
   }
 
   private seedCodexHome(
@@ -362,6 +364,7 @@ export class CodexCliProvider implements AgentProvider {
       stdin: this.composePromptStdin(input.systemPrompt, input.prompt),
       env: {
         HOME: homeDir,
+        CODEX_HOME: join(homeDir, '.codex'),
         ...seedResult.value.configEnv,
       },
       cwd: input.cwd,
@@ -458,6 +461,7 @@ export class CodexCliProvider implements AgentProvider {
       stdin: this.composePromptStdin(input.systemPrompt, input.prompt),
       env: {
         HOME: homeDir,
+        CODEX_HOME: join(homeDir, '.codex'),
         ...seedResult.value.configEnv,
         ...(input.traceparent ? { TALOND_TRACEPARENT: input.traceparent } : {}),
       },

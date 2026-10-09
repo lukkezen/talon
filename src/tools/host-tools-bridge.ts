@@ -93,6 +93,7 @@ export class HostToolsBridge {
     });
 
     this.channelHandler = new ChannelSendHandler({
+      attachments: ctx.config.attachments,
       channelRegistry: ctx.channelRegistry,
       threadRepository: ctx.repos.thread,
       channelRepository: ctx.repos.channel,

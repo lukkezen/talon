@@ -1,8 +1,8 @@
 name: PR Agent (Claude)
 on:
-  pull_request:
-    types: [opened, reopened, ready_for_review]
-  issue_comment:
+  # Disabled for automatic PRs in this fork; use manual dispatch after
+  # configuring ANTHROPIC_KEY if Claude reviews are wanted again.
+  workflow_dispatch:
 jobs:
   pr_agent_job:
     if: ${{ github.event.sender.type != 'Bot' }}

@@ -7,6 +7,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { realpath, stat, readFile } from 'node:fs/promises';
+import { basename, isAbsolute, relative, sep } from 'node:path';
 import { downloadAllowedAttachment } from './attachment-download.js';
 import type pino from 'pino';
 import type { ToolManifest, ToolCallResult } from '../tool-types.js';
@@ -53,7 +55,9 @@ const ATTACHMENT_FETCH_TIMEOUT_MS = 60_000;
 
 export interface ChannelSendAttachmentArg {
   /** HTTP(S) URL to fetch immediately before channel delivery. */
-  url: string;
+  url?: string;
+  /** Absolute local file path; restricted to the run's allowed host roots. */
+  path?: string;
   /** Optional filename override. */
   filename?: string;
   /** Optional MIME type override. */
@@ -231,7 +235,7 @@ export class ChannelSendHandler {
           if (remainingBytes <= 0) {
             throw new Error('attachment batch exceeds total byte limit');
           }
-          const resolved = await this.fetchAttachment(attachment, remainingBytes, deadlineSignal);
+          const resolved = await this.fetchAttachment(attachment, remainingBytes, deadlineSignal, context.allowedHostRoots);
           remainingBytes -= resolved.size ?? resolved.data.length;
           resolvedAttachments.push(resolved);
         }
@@ -368,7 +372,27 @@ export class ChannelSendHandler {
     );
   }
 
-  private async fetchAttachment(input: ChannelSendAttachmentArg, remainingBytes: number, deadlineSignal?: AbortSignal): Promise<Attachment> {
+  private async fetchAttachment(input: ChannelSendAttachmentArg, remainingBytes: number, deadlineSignal?: AbortSignal, allowedHostRoots?: string[]): Promise<Attachment> {
+    if (input && typeof input.path === 'string') {
+      if (input.url !== undefined) throw new Error('attachment must specify either path or url, not both');
+      if (!isAbsolute(input.path)) throw new Error('attachment path must be absolute');
+      if (!allowedHostRoots?.length) throw new Error('local attachments require explicitly allowed host roots');
+      if (deadlineSignal?.aborted) throw new Error('attachment send deadline exceeded');
+      const resolved = await realpath(input.path);
+      const roots = await Promise.all(allowedHostRoots.map(root => realpath(root).catch(() => null)));
+      if (!roots.some(root => root && (relative(root, resolved) === '' || (!relative(root, resolved).startsWith('..' + sep) && relative(root, resolved) !== '..' && !isAbsolute(relative(root, resolved)))))) {
+        throw new Error('attachment path is outside allowed host roots');
+      }
+      const info = await stat(resolved);
+      if (!info.isFile()) throw new Error('attachment path is not a regular file');
+      const limit = Math.min(MAX_ATTACHMENT_BYTES, remainingBytes);
+      if (info.size > limit) throw new Error(`attachment exceeds ${limit} byte limit`);
+      const data = await readFile(resolved, { signal: deadlineSignal });
+      if (data.byteLength > limit) throw new Error(`attachment exceeds ${limit} byte limit`);
+      const filename = typeof input.filename === 'string' && input.filename.trim() ? input.filename.trim() : basename(resolved);
+      const mimeType = typeof input.mimeType === 'string' && input.mimeType.trim() ? input.mimeType.trim() : this.inferMimeType(filename) ?? 'application/octet-stream';
+      return { filename, mimeType, data, size: data.byteLength };
+    }
     if (!input || typeof input.url !== 'string' || input.url.trim() === '') {
       throw new Error('attachment url is required');
     }

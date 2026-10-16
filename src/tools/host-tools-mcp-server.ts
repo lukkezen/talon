@@ -248,7 +248,7 @@ const TOOLS = [
   {
     name: 'channel_send',
     description:
-      'Sends text to configured channels; file attachments are currently Telegram-only. Attachment downloads require channel.attachment:send permission and an explicitly allowed download origin. Use the exact registered channel name. To attach a file, provide a trusted HTTP(S) download URL; the host fetches the bytes before calling the channel connector. Omit externalChatId when replying to the current conversation; specify a verified chat ID for cross-chat delivery or CLI-created schedules.',
+      'Sends text to configured channels; file attachments are currently Telegram-only. Attachments require channel.attachment:send permission. Use the exact registered channel name. To attach a local file, provide its absolute path inside an allowed host root; alternatively provide a trusted HTTP(S) download URL from an explicitly allowed origin. The host reads the bytes before calling the channel connector. Omit externalChatId when replying to the current conversation; specify a verified chat ID for cross-chat delivery or CLI-created schedules.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -273,13 +273,17 @@ const TOOLS = [
           type: 'array' as const,
           maxItems: 10,
           description:
-            'Telegram only: up to ten HTTP(S) download URLs, with a total batch limit of 50 MiB. Requires channel.attachment:send and attachments.allowedOrigins in talond.yaml; private network sources additionally require attachments.privateOrigins. Unsupported channels reject attachments without downloading. Supply filename and mimeType where known. Do not disclose private download URLs in user-facing messages.',
+            'Telegram only: up to ten local file paths or HTTP(S) download URLs, with a total batch limit of 50 MiB. Requires channel.attachment:send. For local files use path within an allowed host root; HTTP(S) sources require attachments.allowedOrigins (and privateOrigins for private addresses). Provide exactly one of path or url per item. Unsupported channels reject attachments. Supply filename and mimeType where known.',
           items: {
             type: 'object' as const,
             properties: {
               url: {
                 type: 'string' as const,
                 description: 'HTTP(S) URL for the file to fetch.',
+              },
+              path: {
+                type: 'string' as const,
+                description: 'Absolute local file path within an allowed host root.',
               },
               filename: {
                 type: 'string' as const,
@@ -290,7 +294,7 @@ const TOOLS = [
                 description: 'Optional MIME type override, e.g. video/mp4.',
               },
             },
-            required: ['url'],
+            // The handler validates that exactly one of path or url is supplied.
           },
         },
       },
